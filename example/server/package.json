@@ -1,0 +1,21 @@
+{
+  "name": "awesome-node-auth-flutter-example-server",
+  "version": "1.0.0",
+  "description": "Minimal Node.js server with awesome-node-auth for Flutter example",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": ["auth", "flutter", "awesome-node-auth"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "awesome-node-auth": "^1.8.4",
+    "express": "^4.21.2",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {}
+}

@@ -21,7 +21,9 @@ pubspec.lock
 .DS_Store
 
 # Compiled Dart / Flutter build artifacts
-*.js
-*.js.map
 *.dart.js
 build/web/
+
+# Node.js
+example/server/node_modules/
+example/server/package-lock.json

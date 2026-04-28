@@ -14,26 +14,27 @@ Supports **web** (including WASM) via HttpOnly cookies + CSRF, and **native** (i
 
 1. [Installation](#installation)
 2. [Quick start](#quick-start)
-3. [Platform behaviour](#platform-behaviour)
-4. [AuthOptions](#authoptions)
-5. [AuthState & userStream](#authstate--userstream)
-6. [Events stream](#events-stream)
-7. [Registration](#registration)
-8. [Login & 2FA](#login--2fa)
-9. [Two-factor authentication (2FA)](#two-factor-authentication-2fa)
-10. [Password management](#password-management)
-11. [Email management](#email-management)
-12. [Active sessions](#active-sessions)
-13. [Account linking](#account-linking)
-14. [AuthUser model](#authuser-model)
-15. [AuthResult\<T\>](#authresultt)
-16. [Custom TokenStorage](#custom-tokenstorage)
-17. [Internal behaviour — automatic refresh](#internal-behaviour--automatic-refresh)
-18. [Headless mode](#headless-mode)
-19. [SSE stream](#sse-stream)
-20. [UI config](#ui-config)
-21. [WASM compatibility](#wasm-compatibility)
-22. [License](#license)
+3. [Examples](#examples)
+4. [Platform behaviour](#platform-behaviour)
+5. [AuthOptions](#authoptions)
+6. [AuthState & userStream](#authstate--userstream)
+7. [Events stream](#events-stream)
+8. [Registration](#registration)
+9. [Login & 2FA](#login--2fa)
+10. [Two-factor authentication (2FA)](#two-factor-authentication-2fa)
+11. [Password management](#password-management)
+12. [Email management](#email-management)
+13. [Active sessions](#active-sessions)
+14. [Account linking](#account-linking)
+15. [AuthUser model](#authuser-model)
+16. [AuthResult\<T\>](#authresultt)
+17. [Custom TokenStorage](#custom-tokenstorage)
+18. [Internal behaviour — automatic refresh](#internal-behaviour--automatic-refresh)
+19. [Headless mode](#headless-mode)
+20. [SSE stream](#sse-stream)
+21. [UI config](#ui-config)
+22. [WASM compatibility](#wasm-compatibility)
+23. [License](#license)
 
 ---
 
@@ -71,6 +72,35 @@ if (result.success && !result.requires2fa) {
   // Proceed to the 2FA step — see the Login & 2FA section
 }
 ```
+
+---
+
+## Examples
+
+A complete **working example** with Flutter app + Node.js backend is available in the [`example/`](example/) directory.
+
+### Run the Example
+
+**1. Start the Node.js server** (in-memory user store):
+```bash
+cd example/server
+npm install
+npm start
+# Runs on http://localhost:3000
+```
+
+**2. Run the Flutter app**:
+```bash
+cd example
+flutter pub get
+flutter run
+```
+
+**Test with demo credentials:**
+- Email: `demo@example.com`
+- Password: `demo123`
+
+See [example/README.md](example/README.md) for full setup guide, architecture diagram, API endpoints, and customization options.
 
 ---
 
