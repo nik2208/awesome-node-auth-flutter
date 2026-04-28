@@ -112,8 +112,8 @@ class AuthHttpClient {
   // -------------------------------------------------------------------------
 
   Future<Map<String, String>> _buildHeaders(
-    Map<String, String>? extra,
-    String path, {
+    String path,
+    Map<String, String>? extra, {
     bool includeAuthHeaders = true,
   }) async {
     final headers = <String, String>{
@@ -178,7 +178,7 @@ class AuthHttpClient {
     Object? body,
     Map<String, String>? queryParameters,
   }) async {
-    final allHeaders = await _buildHeaders(headers, path);
+    final allHeaders = await _buildHeaders(path, headers);
     final response =
         await _rawSend(method, path, allHeaders, body, queryParameters);
 
@@ -255,7 +255,7 @@ class AuthHttpClient {
 
     final refreshed = await _doRefresh();
     if (refreshed) {
-      final retryHeaders = await _buildHeaders(headers, path);
+      final retryHeaders = await _buildHeaders(path, headers);
       return _rawSend(method, path, retryHeaders, body, queryParameters);
     } else {
       await _onLogout?.call(revoked: false);
@@ -292,7 +292,7 @@ class AuthHttpClient {
   /// Calls `POST $apiPrefix/refresh` directly, bypassing retry logic.
   Future<bool> callRefreshEndpoint() async {
     try {
-      final headers = await _buildHeaders(null, '/refresh');
+      final headers = await _buildHeaders('/refresh', null);
       final response = await _rawSend('POST', '/refresh', headers, null, null);
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
