@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.9.1
+
+- README updated to give comprehensive usage instructions.
+
 ## 1.9.0
 
 - version bump to 1.9.0, aligned with awesome-node-auth backend v1.9.0
