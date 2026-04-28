@@ -1,0 +1,27 @@
+# Binaries
+*.dart_tool/
+*.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Flutter specific
+.dart_tool/
+.packages
+pubspec.lock
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# Compiled Dart / Flutter artifacts
+*.js
+*.js.map
+*.dart.js
+web/

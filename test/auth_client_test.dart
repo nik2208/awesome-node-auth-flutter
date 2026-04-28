@@ -1,0 +1,274 @@
+import 'dart:convert';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:mocktail/mocktail.dart';
+
+import 'package:awesome_node_auth_flutter/src/http/auth_http_client.dart';
+import 'package:awesome_node_auth_flutter/src/http/token_storage.dart';
+import 'package:awesome_node_auth_flutter/src/auth_options.dart';
+import 'package:awesome_node_auth_flutter/src/auth_user.dart';
+import 'package:awesome_node_auth_flutter/src/platform/native_auth_client.dart';
+
+class MockHttpClient extends Mock implements http.Client {}
+
+http.Response jsonResponse(int statusCode, [Map<String, dynamic>? body]) {
+  return http.Response(
+    body != null ? jsonEncode(body) : '',
+    statusCode,
+    headers: {'content-type': 'application/json'},
+  );
+}
+
+final _testUser = {
+  'sub': 'user-123',
+  'email': 'test@example.com',
+  'isEmailVerified': true,
+  'firstName': 'Test',
+  'lastName': 'User',
+};
+
+void main() {
+  late MockHttpClient mockClient;
+  late NativeAuthClient authClient;
+  late InMemoryTokenStorage storage;
+
+  setUp(() {
+    registerFallbackValue(Uri());
+    mockClient = MockHttpClient();
+    storage = InMemoryTokenStorage();
+
+    final options = const AuthOptions(
+      apiPrefix: 'https://api.example.com/auth',
+      headless: true,
+      initializeOnStartup: false,
+    );
+
+    final authHttp = AuthHttpClient(
+      inner: mockClient,
+      apiPrefix: options.apiPrefix,
+      bearerProvider: storage.readAccessToken,
+      bearerSetter: storage.writeAccessToken,
+    );
+
+    authClient = NativeAuthClient(options, authHttp, storage);
+  });
+
+  group('AuthClient — login', () {
+    test('successful login updates state', () async {
+      // First call: /login succeeds.
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/login'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async => jsonResponse(200, {'success': true}));
+
+      // Second call: /me returns the user.
+      when(() => mockClient.get(
+            Uri.parse('https://api.example.com/auth/me'),
+            headers: any(named: 'headers'),
+          )).thenAnswer((_) async => jsonResponse(200, _testUser));
+
+      final result = await authClient.login('test@example.com', 'password');
+
+      expect(result.success, isTrue);
+      expect(result.requires2fa, isFalse);
+      expect(result.data, isA<AuthUser>());
+      expect(authClient.state.isAuthenticated, isTrue);
+      expect(authClient.state.currentUser?.email, equals('test@example.com'));
+    });
+
+    test('login with 2FA returns requires2fa=true', () async {
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/login'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async => jsonResponse(200, {
+                'requiresTwoFactor': true,
+                'tempToken': 'tmp-token-xyz',
+                'available2faMethods': ['totp', 'sms'],
+              }));
+
+      final result = await authClient.login('test@example.com', 'password');
+
+      expect(result.success, isTrue);
+      expect(result.requires2fa, isTrue);
+      expect(result.tempToken, equals('tmp-token-xyz'));
+      expect(result.availableMethods, containsAll(['totp', 'sms']));
+    });
+
+    test('failed login returns success=false', () async {
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/login'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async =>
+          jsonResponse(401, {'message': 'Invalid credentials'}));
+
+      final result = await authClient.login('bad@example.com', 'wrong');
+
+      expect(result.success, isFalse);
+      expect(result.error, contains('Invalid credentials'));
+    });
+  });
+
+  group('AuthClient — checkSession', () {
+    test('returns user when session is valid', () async {
+      when(() => mockClient.get(
+            Uri.parse('https://api.example.com/auth/me'),
+            headers: any(named: 'headers'),
+          )).thenAnswer((_) async => jsonResponse(200, _testUser));
+
+      final user = await authClient.checkSession();
+
+      expect(user, isNotNull);
+      expect(user!.email, equals('test@example.com'));
+      expect(user.sub, equals('user-123'));
+      expect(authClient.state.isAuthenticated, isTrue);
+    });
+
+    test('returns null when session is invalid', () async {
+      when(() => mockClient.get(
+            Uri.parse('https://api.example.com/auth/me'),
+            headers: any(named: 'headers'),
+          )).thenAnswer((_) async => jsonResponse(401));
+
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/refresh'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async => jsonResponse(401));
+
+      final user = await authClient.checkSession();
+
+      expect(user, isNull);
+      expect(authClient.state.isAuthenticated, isFalse);
+    });
+  });
+
+  group('AuthClient — register', () {
+    test('successful registration returns userId', () async {
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/register'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async =>
+          jsonResponse(201, {'userId': 'new-user-id'}));
+
+      final result = await authClient.register(
+          'new@example.com', 'pass', 'First', 'Last');
+
+      expect(result.success, isTrue);
+      expect(result.data, equals('new-user-id'));
+    });
+  });
+
+  group('AuthClient — password', () {
+    test('forgotPassword succeeds', () async {
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/forgot-password'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async => jsonResponse(200));
+
+      final result = await authClient.forgotPassword('user@example.com');
+      expect(result.success, isTrue);
+    });
+
+    test('setPassword calls changePassword with empty current password',
+        () async {
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/change-password'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async => jsonResponse(200));
+
+      final result = await authClient.setPassword('newPassword');
+      expect(result.success, isTrue);
+
+      // Verify the body included an empty currentPassword.
+      final captured = verify(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/change-password'),
+            headers: any(named: 'headers'),
+            body: captureAny(named: 'body'),
+          )).captured;
+      final body =
+          jsonDecode(captured.first as String) as Map<String, dynamic>;
+      expect(body['currentPassword'], equals(''));
+      expect(body['newPassword'], equals('newPassword'));
+    });
+  });
+
+  group('AuthClient — 2FA TOTP', () {
+    test('setup2fa returns TotpSetupData', () async {
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/2fa/setup'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async => jsonResponse(200, {
+                'secret': 'TOTP_SECRET',
+                'qrCode': 'data:image/png;base64,abc==',
+              }));
+
+      final result = await authClient.setup2fa();
+
+      expect(result.success, isTrue);
+      expect(result.data?.secret, equals('TOTP_SECRET'));
+    });
+  });
+
+  group('AuthClient — Bearer token injection', () {
+    test('Bearer token is sent in Authorization header', () async {
+      await storage.writeAccessToken('my-access-token');
+
+      when(() => mockClient.get(
+            Uri.parse('https://api.example.com/auth/me'),
+            headers: any(named: 'headers'),
+          )).thenAnswer((_) async => jsonResponse(200, _testUser));
+
+      await authClient.checkSession();
+
+      final captured = verify(() => mockClient.get(
+            Uri.parse('https://api.example.com/auth/me'),
+            headers: captureAny(named: 'headers'),
+          )).captured;
+      final headers = captured.first as Map<String, String>;
+      expect(headers['Authorization'], equals('Bearer my-access-token'));
+    });
+  });
+
+  group('AuthClient — state stream', () {
+    test('userStream emits user on login and null on logout', () async {
+      final events = <AuthUser?>[];
+      final sub = authClient.state.userStream.listen(events.add);
+
+      // Setup login.
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/login'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async => jsonResponse(200));
+      when(() => mockClient.get(
+            Uri.parse('https://api.example.com/auth/me'),
+            headers: any(named: 'headers'),
+          )).thenAnswer((_) async => jsonResponse(200, _testUser));
+
+      await authClient.login('test@example.com', 'password');
+
+      // Logout.
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/logout'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async => jsonResponse(200));
+
+      await authClient.logout();
+
+      await sub.cancel();
+
+      expect(events, hasLength(greaterThanOrEqualTo(2)));
+      expect(events.first, isA<AuthUser>());
+      expect(events.last, isNull);
+    });
+  });
+}
