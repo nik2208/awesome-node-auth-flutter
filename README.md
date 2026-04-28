@@ -60,8 +60,10 @@ class SecureTokenStorage implements TokenStorage {
 }
 
 final auth = AuthClient(
-  AuthOptions(apiPrefix: '/api/auth'),
-  tokenStorage: SecureTokenStorage(),
+  AuthOptions(
+    apiPrefix: '/api/auth',
+    tokenStorage: SecureTokenStorage(),
+  ),
 );
 ```
 
