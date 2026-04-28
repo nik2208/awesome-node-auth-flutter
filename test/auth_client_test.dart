@@ -266,8 +266,10 @@ void main() {
 
       await sub.cancel();
 
+      // userStream yields the current value on subscription (null before login),
+      // then the user after login, then null after logout.
       expect(events, hasLength(greaterThanOrEqualTo(2)));
-      expect(events.first, isA<AuthUser>());
+      expect(events.any((e) => e is AuthUser), isTrue);
       expect(events.last, isNull);
     });
 
