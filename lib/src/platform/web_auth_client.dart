@@ -51,9 +51,9 @@ class WebAuthClient extends BaseAuthClient {
   Stream<String> getToolsStream() {
     try {
       final prefix = options.apiPrefix;
-      final url = prefix.startsWith('http')
-          ? '$prefix/tools/stream'
-          : '$prefix/tools/stream';
+      // For relative prefixes the browser resolves against the current origin.
+      // For absolute prefixes the URL is used as-is.
+      final url = '$prefix/tools/stream';
 
       final controller = StreamController<String>.broadcast();
       final es = web.EventSource(url);

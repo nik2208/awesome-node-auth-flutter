@@ -281,9 +281,11 @@ class AuthHttpClient {
       if (response.statusCode >= 200 && response.statusCode < 300) {
         if (_bearerSetter != null) {
           try {
-            final data = jsonDecode(response.body) as Map<String, dynamic>;
-            final newToken = data['accessToken'] as String?;
-            if (newToken != null) await _bearerSetter(newToken);
+            final decoded = jsonDecode(response.body);
+            if (decoded is Map<String, dynamic>) {
+              final newToken = decoded['accessToken'] as String?;
+              if (newToken != null) await _bearerSetter(newToken);
+            }
           } catch (_) {}
         }
         return true;

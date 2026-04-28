@@ -20,8 +20,8 @@ pubspec.lock
 # macOS
 .DS_Store
 
-# Compiled Dart / Flutter artifacts
+# Compiled Dart / Flutter build artifacts
 *.js
 *.js.map
 *.dart.js
-web/
+build/web/
