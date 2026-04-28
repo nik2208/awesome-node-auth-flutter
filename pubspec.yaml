@@ -5,6 +5,15 @@ description: >-
   Bearer token.
 version: 0.1.0
 homepage: https://github.com/nik2208/awesome-node-auth-flutter
+repository: https://github.com/nik2208/awesome-node-auth-flutter
+issue_tracker: https://github.com/nik2208/awesome-node-auth-flutter/issues
+documentation: https://pub.dev/documentation/awesome_node_auth_flutter/latest/
+
+topics:
+  - authentication
+  - auth
+  - flutter
+  - wasm
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

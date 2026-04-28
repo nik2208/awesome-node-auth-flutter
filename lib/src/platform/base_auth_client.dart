@@ -356,8 +356,8 @@ abstract class BaseAuthClient implements AuthClient {
 
   @override
   Future<AuthResult<void>> validateSms(String tempToken, String code) async {
-    final response = await httpClient
-        .post('/sms/verify', body: {'tempToken': tempToken, 'code': code});
+    final response = await httpClient.post('/sms/verify',
+        body: {'tempToken': tempToken, 'code': code, 'mode': '2fa'});
     if (response.statusCode >= 200 && response.statusCode < 300) {
       await checkSession();
       return AuthResult.success();

@@ -13,7 +13,13 @@ class AuthState {
   /// Stream that emits the current user whenever authentication state changes.
   ///
   /// Emits `null` when the user is not authenticated.
-  Stream<AuthUser?> get userStream => _controller.stream;
+  ///
+  /// New subscribers always receive the current value immediately upon
+  /// subscription, followed by future state changes.
+  Stream<AuthUser?> get userStream async* {
+    yield _currentUser;
+    yield* _controller.stream;
+  }
 
   /// The currently authenticated user, or `null` if not authenticated.
   AuthUser? get currentUser => _currentUser;
