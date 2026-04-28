@@ -2,18 +2,28 @@
 
 This example demonstrates a complete authentication flow using the Flutter `awesome_node_auth_flutter` client library with a Node.js backend powered by `awesome-node-auth`.
 
+The Flutter app in this folder uses a local path dependency (`path: ../`) so it always runs against the current workspace version of `awesome_node_auth_flutter`, not the published pub.dev version.
+
 ## 📱 Architecture
 
 ```
 ┌──────────────────┐         HTTP/REST          ┌──────────────────┐
 │  Flutter App     │◄──────────────────────────►│  Node.js Server  │
-│  (iOS/Android)   │      Bearer Tokens         │ (awesome-node-   │
-│                  │         + Cookies          │   auth)          │
+│  (iOS/Android    │   Web:  HttpOnly Cookies   │ (awesome-node-   │
+│   Web / WASM)    │   Native: Bearer Tokens    │   auth)          │
 └──────────────────┘                            └──────────────────┘
-   • Login Form                                    • Express App
+   • Login / Register                              • Express App
    • Profile Screen                                • In-Memory Store
-   • Token Refresh                                 • Auth Routes
+   • Fetch Protected Data (auth.httpClient)        • Auth Routes
+   • Silent Token Refresh                          • Protected Route
 ```
+
+Authentication strategy is chosen automatically:
+
+| Platform | Strategy |
+|---|---|
+| Web / WASM | HttpOnly cookie + `X-CSRF-Token` |
+| iOS / Android / Desktop | Bearer token via `TokenStorage`, `X-Auth-Strategy: bearer` |
 
 ## 🚀 Quick Start
 
@@ -79,9 +89,26 @@ flutter run -d chrome
 ### Creating a New User
 
 1. **Fill email and password** in the login screen
-2. **Click "Register"** instead of Login
-3. **The app will automatically log you in** after registration
-4. **You'll see your profile with the new email**
+2. **Click "Register"** — the app logs you in automatically after registration
+3. **You'll see your profile screen**
+4. **Click "Fetch Protected Data"** to call `GET /profile` using `auth.httpClient` — no manual token handling
+5. **Click "Logout"** to clear the session
+
+## 🔑 auth.httpClient — interceptor pattern
+
+The example demonstrates the core design principle: once authenticated, your code never touches tokens.
+
+```dart
+// In main.dart — one line, works on all platforms:
+final response = await authClient.httpClient.get(
+  Uri.parse('http://localhost:3000/profile'),
+);
+```
+
+- On **native**: the library automatically attaches `Authorization: Bearer <token>` and refreshes it silently on 401.
+- On **web / WASM**: the browser sends the HttpOnly cookie; the library adds `X-CSRF-Token` for same-origin requests.
+
+This is equivalent to the `AuthInterceptor` in `ng-awesome-node-auth` or the `auth.middleware()` on the Express side.
 
 ## 📡 API Endpoints
 
@@ -184,12 +211,23 @@ In [lib/main.dart](lib/main.dart), modify:
 
 ```dart
 late final AuthClient authClient = AuthClient(
-  baseUrl: 'https://your-api.example.com', // Change this
-  onAuthStateChange: (state) {
-    setState(() {});
-  },
+  AuthOptions(
+    apiPrefix: 'https://your-api.example.com/auth', // Change this
+    headless: true,
+  ),
 );
 ```
+
+### Use auth.httpClient for your own backend calls
+
+```dart
+// Anywhere in your widget tree, after authentication:
+final response = await authClient.httpClient.get(
+  Uri.parse('https://your-api.example.com/todos'),
+);
+```
+
+No token management required — the client injects credentials transparently.
 
 ### Add More API Endpoints
 
@@ -253,16 +291,13 @@ PORT=3001 npm start
 
 ### CORS errors
 
-Server enables CORS for:
-- `http://localhost:3000`
-- `http://localhost:8080`
-- `http://localhost:5000`
+The server allows any `localhost` or `127.0.0.1` origin on any port (regex-based, suitable for development).
 
-To add more origins, modify [server/server.js](server/server.js):
+For production, pin the allowed origins in [server/server.js](server/server.js):
 
 ```javascript
 app.use(cors({
-  origin: ['http://localhost:3000', 'https://your-domain.com'],
+  origin: ['https://your-app.example.com'],
   credentials: true,
 }));
 ```

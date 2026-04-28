@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.9.3
+
+- Fixed auth/httpClient wrapper
+
 ## 1.9.2
 
 - Added example project with a simple Node.js backend and Flutter frontend demonstrating usage of the package.

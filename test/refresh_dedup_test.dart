@@ -89,9 +89,9 @@ void main() {
 
       // Fire three concurrent requests — all will 401 simultaneously.
       await Future.wait([
-        authHttp.get('/me'),
-        authHttp.get('/profile'),
-        authHttp.get('/sessions'),
+        authHttp.apiGet('/me'),
+        authHttp.apiGet('/profile'),
+        authHttp.apiGet('/sessions'),
       ]);
 
       // Despite three concurrent 401s, refresh must have been called only once.
@@ -109,7 +109,7 @@ void main() {
       // Refresh fails.
       authHttp.setRefreshHandler(() async => false);
 
-      await authHttp.get('/me');
+      await authHttp.apiGet('/me');
 
       expect(logoutCallCount, equals(1));
     });
@@ -123,7 +123,7 @@ void main() {
             'message': 'Session has been revoked',
           }));
 
-      await authHttp.get('/me');
+      await authHttp.apiGet('/me');
 
       expect(refreshCallCount, equals(0),
           reason: 'No refresh should be attempted for SESSION_REVOKED');
@@ -143,38 +143,38 @@ void main() {
     test('401 on /login does NOT trigger refresh', () async {
       mockEndpoint('/login', 401);
       await authHttp
-          .post('/login', body: {'email': 'x@y.com', 'password': 'p'});
+          .apiPost('/login', body: {'email': 'x@y.com', 'password': 'p'});
       expect(refreshCallCount, equals(0));
     });
 
     test('401 on /logout does NOT trigger refresh', () async {
       mockEndpoint('/logout', 401);
-      await authHttp.post('/logout');
+      await authHttp.apiPost('/logout');
       expect(refreshCallCount, equals(0));
     });
 
     test('401 on /refresh does NOT trigger refresh', () async {
       mockEndpoint('/refresh', 401);
-      await authHttp.post('/refresh');
+      await authHttp.apiPost('/refresh');
       expect(refreshCallCount, equals(0));
     });
 
     test('401 on /register does NOT trigger refresh', () async {
       mockEndpoint('/register', 401);
-      await authHttp.post('/register', body: {});
+      await authHttp.apiPost('/register', body: {});
       expect(refreshCallCount, equals(0));
     });
 
     test('401 on /forgot-password does NOT trigger refresh', () async {
       mockEndpoint('/forgot-password', 401);
-      await authHttp.post('/forgot-password', body: {'email': 'a@b.com'});
+      await authHttp.apiPost('/forgot-password', body: {'email': 'a@b.com'});
       expect(refreshCallCount, equals(0));
     });
 
     test('401 on /reset-password does NOT trigger refresh', () async {
       mockEndpoint('/reset-password', 401);
       await authHttp
-          .post('/reset-password', body: {'password': 'p', 'token': 't'});
+          .apiPost('/reset-password', body: {'password': 'p', 'token': 't'});
       expect(refreshCallCount, equals(0));
     });
 
@@ -183,14 +183,14 @@ void main() {
             any(),
             headers: any(named: 'headers'),
           )).thenAnswer((_) async => jsonResponse(401));
-      await authHttp.get('/verify-email', queryParameters: {'token': 'tok'});
+      await authHttp.apiGet('/verify-email', queryParameters: {'token': 'tok'});
       expect(refreshCallCount, equals(0));
     });
 
     test('401 on /2fa/verify does NOT trigger refresh', () async {
       mockEndpoint('/2fa/verify', 401);
-      await authHttp
-          .post('/2fa/verify', body: {'tempToken': 't', 'totpCode': '123456'});
+      await authHttp.apiPost('/2fa/verify',
+          body: {'tempToken': 't', 'totpCode': '123456'});
       expect(refreshCallCount, equals(0));
     });
   });
@@ -214,7 +214,7 @@ void main() {
             body: any(named: 'body'),
           )).thenAnswer((_) async => jsonResponse(200));
 
-      await authHttp.get('/me');
+      await authHttp.apiGet('/me');
 
       expect(refreshCallCount, equals(1),
           reason: '401 on /me should trigger one refresh');

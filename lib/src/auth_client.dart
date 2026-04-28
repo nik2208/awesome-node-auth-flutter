@@ -158,6 +158,26 @@ abstract class AuthClient {
   Future<AuthResult<void>> deleteAccount();
 
   // ---------------------------------------------------------------------------
+  // Authenticated HTTP client (interceptor / guard)
+  // ---------------------------------------------------------------------------
+
+  /// An [http.Client] that transparently handles authentication for every
+  /// request to the backend \u2014 analogous to an Angular `HttpInterceptor`.
+  ///
+  /// - **Web / WASM**: attaches the CSRF token for same-origin requests;
+  ///   the browser manages HttpOnly cookies automatically.
+  /// - **Native**: attaches `Authorization: Bearer <token>` and
+  ///   `X-Auth-Strategy: bearer`; silently refreshes the token on 401 / 403.
+  ///
+  /// Use this client for all your own backend API calls so authentication
+  /// is handled without any additional setup:
+  ///
+  /// ```dart
+  /// final response = await auth.httpClient.get(Uri.parse('$api/todos'));
+  /// ```
+  http.Client get httpClient;
+
+  // ---------------------------------------------------------------------------
   // Streaming & UI config
   // ---------------------------------------------------------------------------
 

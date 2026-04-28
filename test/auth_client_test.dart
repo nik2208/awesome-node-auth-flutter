@@ -84,10 +84,10 @@ void main() {
             headers: any(named: 'headers'),
             body: any(named: 'body'),
           )).thenAnswer((_) async => jsonResponse(200, {
-                'requiresTwoFactor': true,
-                'tempToken': 'tmp-token-xyz',
-                'available2faMethods': ['totp', 'sms'],
-              }));
+            'requiresTwoFactor': true,
+            'tempToken': 'tmp-token-xyz',
+            'available2faMethods': ['totp', 'sms'],
+          }));
 
       final result = await authClient.login('test@example.com', 'password');
 
@@ -99,16 +99,47 @@ void main() {
 
     test('failed login returns success=false', () async {
       when(() => mockClient.post(
-            Uri.parse('https://api.example.com/auth/login'),
-            headers: any(named: 'headers'),
-            body: any(named: 'body'),
-          )).thenAnswer((_) async =>
-          jsonResponse(401, {'message': 'Invalid credentials'}));
+                Uri.parse('https://api.example.com/auth/login'),
+                headers: any(named: 'headers'),
+                body: any(named: 'body'),
+              ))
+          .thenAnswer((_) async =>
+              jsonResponse(401, {'message': 'Invalid credentials'}));
 
       final result = await authClient.login('bad@example.com', 'wrong');
 
       expect(result.success, isFalse);
       expect(result.error, contains('Invalid credentials'));
+    });
+
+    test('native login stores bearer token and uses it for /me', () async {
+      // awesome-node-auth bearer strategy returns tokens in the login body.
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/login'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async => jsonResponse(200, {
+            'success': true,
+            'accessToken': 'native-access-token',
+            'refreshToken': 'native-refresh-token',
+          }));
+
+      when(() => mockClient.get(
+            Uri.parse('https://api.example.com/auth/me'),
+            headers: any(named: 'headers'),
+          )).thenAnswer((_) async => jsonResponse(200, _testUser));
+
+      final result = await authClient.login('test@example.com', 'password');
+
+      expect(result.success, isTrue);
+
+      final captured = verify(() => mockClient.get(
+            Uri.parse('https://api.example.com/auth/me'),
+            headers: captureAny(named: 'headers'),
+          )).captured;
+      final headers = captured.first as Map<String, String>;
+      expect(headers['Authorization'], equals('Bearer native-access-token'));
+      expect(headers['X-Auth-Strategy'], equals('bearer'));
     });
   });
 
@@ -149,14 +180,15 @@ void main() {
   group('AuthClient — register', () {
     test('successful registration returns userId', () async {
       when(() => mockClient.post(
-            Uri.parse('https://api.example.com/auth/register'),
-            headers: any(named: 'headers'),
-            body: any(named: 'body'),
-          )).thenAnswer((_) async =>
-          jsonResponse(201, {'userId': 'new-user-id'}));
+                Uri.parse('https://api.example.com/auth/register'),
+                headers: any(named: 'headers'),
+                body: any(named: 'body'),
+              ))
+          .thenAnswer(
+              (_) async => jsonResponse(201, {'userId': 'new-user-id'}));
 
-      final result = await authClient.register(
-          'new@example.com', 'pass', 'First', 'Last');
+      final result =
+          await authClient.register('new@example.com', 'pass', 'First', 'Last');
 
       expect(result.success, isTrue);
       expect(result.data, equals('new-user-id'));
@@ -192,8 +224,7 @@ void main() {
             headers: any(named: 'headers'),
             body: captureAny(named: 'body'),
           )).captured;
-      final body =
-          jsonDecode(captured.first as String) as Map<String, dynamic>;
+      final body = jsonDecode(captured.first as String) as Map<String, dynamic>;
       expect(body['currentPassword'], equals(''));
       expect(body['newPassword'], equals('newPassword'));
     });
@@ -206,9 +237,9 @@ void main() {
             headers: any(named: 'headers'),
             body: any(named: 'body'),
           )).thenAnswer((_) async => jsonResponse(200, {
-                'secret': 'TOTP_SECRET',
-                'qrCode': 'data:image/png;base64,abc==',
-              }));
+            'secret': 'TOTP_SECRET',
+            'qrCode': 'data:image/png;base64,abc==',
+          }));
 
       final result = await authClient.setup2fa();
 

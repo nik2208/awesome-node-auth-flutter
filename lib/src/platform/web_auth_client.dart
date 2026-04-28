@@ -4,6 +4,7 @@ import 'dart:js_interop';
 // ignore: avoid_web_libraries_in_flutter
 import 'package:web/web.dart' as web;
 import 'package:http/http.dart' as http;
+import 'package:http/browser_client.dart';
 
 import '../auth_client.dart';
 import '../auth_options.dart';
@@ -16,7 +17,11 @@ import 'base_auth_client.dart';
 /// On web/WASM platforms (`dart.library.js_interop` available) this function
 /// is used.
 AuthClient createAuthClient(AuthOptions options, {http.Client? httpClient}) {
-  final inner = httpClient ?? http.Client();
+  final inner = httpClient ??
+      (() {
+        final browser = BrowserClient()..withCredentials = true;
+        return browser;
+      })();
 
   final authHttp = AuthHttpClient(
     inner: inner,
@@ -72,7 +77,7 @@ class WebAuthClient extends BaseAuthClient {
         }
       }.toJS;
 
-      controller.onCancel = es.close;
+      controller.onCancel = () => es.close();
 
       return controller.stream;
     } catch (_) {

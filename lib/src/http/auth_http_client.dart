@@ -35,19 +35,24 @@ typedef BearerTokenSetter = Future<void> Function(String token);
 /// Called when the session ends (expired, revoked, or user logout).
 typedef LogoutCallback = Future<void> Function({bool revoked});
 
-/// Core HTTP client that wraps [http.Client] and adds:
+/// Authenticated HTTP client that wraps [http.Client] and adds:
 ///
 /// - CSRF header injection (web, same-origin)
 /// - Bearer token injection (native)
 /// - Automatic refresh + retry on 401/403 with deduplication
 /// - Session-revoked detection
-class AuthHttpClient {
+///
+/// Extends [http.BaseClient] so it can be used as a drop-in [http.Client]
+/// for any backend request — authentication is handled transparently, similar
+/// to an Angular `HttpInterceptor`.
+class AuthHttpClient extends http.BaseClient {
   final http.Client _inner;
   final String _apiPrefix;
 
   final CsrfTokenProvider? _csrfProvider;
   final BearerTokenProvider? _bearerProvider;
   final BearerTokenSetter? _bearerSetter;
+  String? _refreshToken;
 
   LogoutCallback? _onLogout;
   Future<bool> Function()? _refreshHandler;
@@ -128,6 +133,9 @@ class AuthHttpClient {
       if (csrf != null) headers['X-CSRF-Token'] = csrf;
 
       if (_bearerProvider != null) {
+        // Interop contract with awesome-node-auth: native clients opt into
+        // token-in-body delivery via X-Auth-Strategy=bearer.
+        headers['X-Auth-Strategy'] = 'bearer';
         final bearer = await _bearerProvider();
         if (bearer != null) headers['Authorization'] = 'Bearer $bearer';
       }
@@ -137,31 +145,36 @@ class AuthHttpClient {
   }
 
   // -------------------------------------------------------------------------
-  // Public HTTP verbs
+  // Path-based HTTP verbs (internal use by BaseAuthClient)
+  //
+  // These use String paths relative to apiPrefix and return buffered
+  // http.Response objects. They are intentionally distinct from the
+  // http.BaseClient URI-based methods (get/post/patch/delete) which are
+  // inherited and used by consumers via [AuthClient.httpClient].
   // -------------------------------------------------------------------------
 
-  Future<http.Response> get(
+  Future<http.Response> apiGet(
     String path, {
     Map<String, String>? headers,
     Map<String, String>? queryParameters,
   }) =>
       _send('GET', path, headers: headers, queryParameters: queryParameters);
 
-  Future<http.Response> post(
+  Future<http.Response> apiPost(
     String path, {
     Map<String, String>? headers,
     Object? body,
   }) =>
       _send('POST', path, headers: headers, body: body);
 
-  Future<http.Response> patch(
+  Future<http.Response> apiPatch(
     String path, {
     Map<String, String>? headers,
     Object? body,
   }) =>
       _send('PATCH', path, headers: headers, body: body);
 
-  Future<http.Response> delete(
+  Future<http.Response> apiDelete(
     String path, {
     Map<String, String>? headers,
   }) =>
@@ -182,6 +195,8 @@ class AuthHttpClient {
     final response =
         await _rawSend(method, path, allHeaders, body, queryParameters);
 
+    await _captureBearerTokens(response);
+
     if ((response.statusCode == 401 || response.statusCode == 403) &&
         !_isExcludedEndpoint(path)) {
       return _handleUnauthorized(method, path, response,
@@ -189,6 +204,29 @@ class AuthHttpClient {
     }
 
     return response;
+  }
+
+  Future<void> _captureBearerTokens(http.Response response) async {
+    if (_bearerSetter == null) return;
+    if (response.body.isEmpty) return;
+
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) return;
+
+      final accessToken = decoded['accessToken'] as String?;
+      final refreshToken = decoded['refreshToken'] as String?;
+
+      if (accessToken != null) {
+        // Persist before subsequent requests (e.g. immediate /me after /login).
+        await _bearerSetter(accessToken);
+      }
+      if (refreshToken != null) {
+        _refreshToken = refreshToken;
+      }
+    } catch (_) {
+      // Non-JSON or body without tokens: ignore.
+    }
   }
 
   Future<http.Response> _rawSend(
@@ -293,18 +331,13 @@ class AuthHttpClient {
   Future<bool> callRefreshEndpoint() async {
     try {
       final headers = await _buildHeaders('/refresh', null);
-      final response = await _rawSend('POST', '/refresh', headers, null, null);
+      final body = (_bearerProvider != null && _refreshToken != null)
+          ? {'refreshToken': _refreshToken}
+          : null;
+      final response = await _rawSend('POST', '/refresh', headers, body, null);
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        if (_bearerSetter != null) {
-          try {
-            final decoded = jsonDecode(response.body);
-            if (decoded is Map<String, dynamic>) {
-              final newToken = decoded['accessToken'] as String?;
-              if (newToken != null) await _bearerSetter(newToken);
-            }
-          } catch (_) {}
-        }
+        await _captureBearerTokens(response);
         return true;
       }
       return false;
@@ -313,5 +346,76 @@ class AuthHttpClient {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // http.BaseClient implementation
+  // -------------------------------------------------------------------------
+
+  /// Sends [request] with auth headers injected, retrying once after a
+  /// transparent token refresh on 401 / 403.
+  ///
+  /// This allows [AuthHttpClient] to be used as a generic [http.Client]
+  /// for any call to the backend — no manual token handling required.
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    // Inject auth headers before the request is finalised inside _inner.send().
+    final authHeaders = await _buildHeaders(request.url.toString(), null);
+    request.headers.addAll(authHeaders);
+
+    // Materialise the response so we can inspect the status code and body.
+    final streamed = await _inner.send(request);
+    final response = await http.Response.fromStream(streamed);
+
+    await _captureBearerTokens(response);
+
+    if ((response.statusCode == 401 || response.statusCode == 403) &&
+        !_isExcludedEndpoint(request.url.path)) {
+      if (_isSessionRevoked(response)) {
+        await _onLogout?.call(revoked: true);
+        return _toStreamedResponse(response);
+      }
+
+      final refreshed = await _doRefresh();
+      if (refreshed) {
+        final retry = _cloneRequest(request);
+        final retryHeaders = await _buildHeaders(request.url.toString(), null);
+        retry.headers.addAll(retryHeaders);
+        final retryStreamed = await _inner.send(retry);
+        final retryResponse = await http.Response.fromStream(retryStreamed);
+        return _toStreamedResponse(retryResponse);
+      } else {
+        await _onLogout?.call(revoked: false);
+      }
+    }
+
+    return _toStreamedResponse(response);
+  }
+
+  @override
   void close() => _inner.close();
+
+  /// Converts a buffered [http.Response] back to [http.StreamedResponse].
+  http.StreamedResponse _toStreamedResponse(http.Response r) =>
+      http.StreamedResponse(
+        Stream.value(r.bodyBytes),
+        r.statusCode,
+        contentLength: r.contentLength,
+        headers: r.headers,
+        reasonPhrase: r.reasonPhrase,
+      );
+
+  /// Clones an [http.Request] so it can be resent after a token refresh.
+  ///
+  /// Only [http.Request] (the standard in-memory request) is supported;
+  /// multipart and other streaming subtypes cannot be reliably cloned.
+  http.Request _cloneRequest(http.BaseRequest original) {
+    if (original is http.Request) {
+      return http.Request(original.method, original.url)
+        ..encoding = original.encoding
+        ..bodyBytes = original.bodyBytes;
+    }
+    throw UnsupportedError(
+      'AuthHttpClient cannot retry ${original.runtimeType}. '
+      'Use http.Request for authenticated calls through this client.',
+    );
+  }
 }

@@ -9,8 +9,9 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(express.json());
 app.use(cookieParser());
+// Allow all localhost origins (for development)
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:8080', 'http://localhost:5000'],
+  origin: /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/,
   credentials: true,
 }));
 
@@ -108,6 +109,124 @@ class InMemoryUserStore {
     if (user) {
       user.smsCode = code;
       user.smsCodeExpiry = expiry;
+    }
+  }
+
+  async updateLastLogin(userId) {
+    const user = this.users.get(userId);
+    if (user) {
+      user.lastLogin = new Date();
+    }
+  }
+
+  // Optional methods
+  async findByResetToken(token) {
+    for (const user of this.users.values()) {
+      if (user.resetToken === token) {
+        return user;
+      }
+    }
+    return null;
+  }
+
+  async findByMagicLinkToken(token) {
+    for (const user of this.users.values()) {
+      if (user.magicLinkToken === token) {
+        return user;
+      }
+    }
+    return null;
+  }
+
+  async findByEmailVerificationToken(token) {
+    for (const user of this.users.values()) {
+      if (user.emailVerificationToken === token) {
+        return user;
+      }
+    }
+    return null;
+  }
+
+  async updateEmailChangeToken(userId, pendingEmail, token, expiry) {
+    const user = this.users.get(userId);
+    if (user) {
+      user.emailChangeToken = token;
+      user.emailChangeTokenExpiry = expiry;
+      user.pendingEmail = pendingEmail;
+    }
+  }
+
+  async updateEmail(userId, newEmail) {
+    const user = this.users.get(userId);
+    if (user) {
+      user.email = newEmail;
+      user.emailChangeToken = null;
+      user.emailChangeTokenExpiry = null;
+      user.pendingEmail = null;
+    }
+  }
+
+  async findByEmailChangeToken(token) {
+    for (const user of this.users.values()) {
+      if (user.emailChangeToken === token) {
+        return user;
+      }
+    }
+    return null;
+  }
+
+  async updateAccountLinkToken(userId, pendingEmail, pendingProvider, token, expiry) {
+    const user = this.users.get(userId);
+    if (user) {
+      user.accountLinkToken = token;
+      user.accountLinkTokenExpiry = expiry;
+      user.pendingEmail = pendingEmail;
+      user.pendingProvider = pendingProvider;
+    }
+  }
+
+  async findByAccountLinkToken(token) {
+    for (const user of this.users.values()) {
+      if (user.accountLinkToken === token) {
+        return user;
+      }
+    }
+    return null;
+  }
+
+  async updateRequire2FA(userId, required) {
+    const user = this.users.get(userId);
+    if (user) {
+      user.require2FA = required;
+    }
+  }
+
+  async findByProviderAccount(provider, providerAccountId) {
+    for (const user of this.users.values()) {
+      if (user.provider === provider && user.providerAccountId === providerAccountId) {
+        return user;
+      }
+    }
+    return null;
+  }
+
+  async listUsers(limit = 50, offset = 0) {
+    return Array.from(this.users.values())
+      .slice(offset, offset + limit);
+  }
+
+  async updateProfile(userId, data) {
+    const user = this.users.get(userId);
+    if (user) {
+      if (data.firstName !== undefined) user.firstName = data.firstName;
+      if (data.lastName !== undefined) user.lastName = data.lastName;
+    }
+  }
+
+  async updatePhoneNumber(userId, phoneNumber) {
+    const user = this.users.get(userId);
+    if (user) {
+      user.phoneNumber = phoneNumber;
     }
   }
 }
@@ -221,11 +340,11 @@ app.use((req, res) => {
 // ============================================================================
 // Start Server
 // ============================================================================
-app.listen(PORT, () => {
+app.listen(PORT, '127.0.0.1', () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════════╗
 ║   Awesome Node Auth - Flutter Example Server              ║
-║   Running on http://localhost:${PORT}                       ║
+║   Running on http://localhost:${PORT}                        ║
 ╠═══════════════════════════════════════════════════════════╣
 ║   Auth Endpoints:                                         ║
 ║   • POST   /auth/register                                 ║
@@ -238,8 +357,8 @@ app.listen(PORT, () => {
 ║   • Email: demo@example.com                               ║
 ║   • Password: demo123                                     ║
 ║                                                           ║
-║   Info: http://localhost:${PORT}/info                       ║
-║   Health: http://localhost:${PORT}/health                   ║
+║   Info: http://localhost:${PORT}/info                        ║
+║   Health: http://localhost:${PORT}/health                    ║
 ╚═══════════════════════════════════════════════════════════╝
   `);
 });

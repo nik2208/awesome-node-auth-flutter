@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:awesome_node_auth_flutter/awesome_node_auth_flutter.dart';
 
@@ -41,6 +43,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   String? _errorMessage;
+  String? _privateData; // result of a protected API call via auth.httpClient
 
   @override
   void dispose() {
@@ -86,8 +89,19 @@ class _AuthScreenState extends State<AuthScreen> {
       );
       if (!result.success) {
         setState(() => _errorMessage = result.error ?? 'Registration failed');
+      } else {
+        final loginResult = await authClient.login(
+          _emailController.text.trim(),
+          _passwordController.text,
+        );
+        if (!loginResult.success) {
+          setState(
+            () => _errorMessage =
+                loginResult.error ?? 'Login after registration failed',
+          );
+        }
       }
-      // Automatically logged in after registration
+      // Registration flow authenticated using AuthClient only (no manual token handling)
     } catch (e) {
       setState(() => _errorMessage = 'Registration failed: $e');
     } finally {
@@ -101,12 +115,39 @@ class _AuthScreenState extends State<AuthScreen> {
       if (mounted) {
         _emailController.clear();
         _passwordController.clear();
-        setState(() => _errorMessage = null);
+        setState(() {
+          _errorMessage = null;
+          _privateData = null;
+        });
       }
     } catch (e) {
       if (mounted) {
         setState(() => _errorMessage = 'Logout failed: $e');
       }
+    }
+  }
+
+  /// Demonstrates [AuthClient.httpClient] as a transparent auth interceptor:
+  /// no tokens are handled here — the library injects Bearer (native) or
+  /// CSRF+cookies (web/WASM) automatically.
+  Future<void> _fetchPrivateData() async {
+    setState(() => _isLoading = true);
+    try {
+      // auth.httpClient is a drop-in http.Client with auth injected.
+      // On native: adds Authorization + X-Auth-Strategy: bearer.
+      // On web/WASM: browser sends HttpOnly cookie automatically.
+      final uri = Uri.parse('http://localhost:3000/profile');
+      final response = await authClient.httpClient.get(uri);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        setState(() => _privateData = data['message']?.toString());
+      } else {
+        setState(() => _privateData = 'Error ${response.statusCode}');
+      }
+    } catch (e) {
+      setState(() => _privateData = 'Error: $e');
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -149,6 +190,27 @@ class _AuthScreenState extends State<AuthScreen> {
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               const SizedBox(height: 32),
+              ElevatedButton.icon(
+                onPressed: _isLoading ? null : _fetchPrivateData,
+                icon: const Icon(Icons.cloud_download),
+                label: const Text('Fetch Protected Data'),
+              ),
+              if (_privateData != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    border: Border.all(color: Colors.green),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    _privateData!,
+                    style: TextStyle(color: Colors.green.shade900),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
               ElevatedButton.icon(
                 onPressed: _isLoading ? null : _handleLogout,
                 icon: const Icon(Icons.logout),

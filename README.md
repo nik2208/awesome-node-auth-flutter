@@ -31,10 +31,11 @@ Supports **web** (including WASM) via HttpOnly cookies + CSRF, and **native** (i
 17. [Custom TokenStorage](#custom-tokenstorage)
 18. [Internal behaviour — automatic refresh](#internal-behaviour--automatic-refresh)
 19. [Headless mode](#headless-mode)
-20. [SSE stream](#sse-stream)
-21. [UI config](#ui-config)
-22. [WASM compatibility](#wasm-compatibility)
-23. [License](#license)
+20. [Authenticated HTTP client (interceptor)](#authenticated-http-client-interceptor)
+21. [SSE stream](#sse-stream)
+22. [UI config](#ui-config)
+23. [WASM compatibility](#wasm-compatibility)
+24. [License](#license)
 
 ---
 
@@ -42,7 +43,7 @@ Supports **web** (including WASM) via HttpOnly cookies + CSRF, and **native** (i
 
 ```yaml
 dependencies:
-  awesome_node_auth_flutter: ^1.9.2
+  awesome_node_auth_flutter: ^1.9.3
 ```
 
 ---
@@ -681,6 +682,44 @@ auth.events.listen((event) {
 - Apps using **GoRouter** or **AutoRoute** for programmatic navigation.
 - **Web iframes** where redirecting the frame would break the embedding page.
 - Any scenario where the auth client must not touch `window.location`.
+
+---
+
+## Authenticated HTTP client (interceptor)
+
+`auth.httpClient` is a standard [`http.Client`](https://pub.dev/documentation/http/latest/http/Client-class.html) with authentication baked in — analogous to an Angular `HttpInterceptor` or the `auth.js` middleware for Express.
+
+Use it for **all** calls to your own backend. There is nothing extra to configure: the library automatically injects the correct credentials for the running platform.
+
+| Platform | What is injected |
+|---|---|
+| Web / WASM | `X-CSRF-Token` for same-origin requests; the browser sends the HttpOnly cookie automatically |
+| Native | `Authorization: Bearer <token>` + `X-Auth-Strategy: bearer`; token is refreshed silently on 401 / 403 |
+
+```dart
+// auth.httpClient is a drop-in http.Client — use it anywhere
+final client = auth.httpClient;
+
+// GET a protected resource — no manual token handling
+final response = await client.get(Uri.parse('https://api.example.com/todos'));
+
+// POST with a JSON body
+final res = await client.post(
+  Uri.parse('https://api.example.com/todos'),
+  headers: {'Content-Type': 'application/json'},
+  body: jsonEncode({'title': 'Buy milk'}),
+);
+```
+
+Because `httpClient` is an `http.Client`, it is compatible with any package that accepts one (e.g. `dio` adapters, `chopper`, `retrofit`, GraphQL clients):
+
+```dart
+// Example: pass the authenticated client to a third-party package
+final graphql = GraphQLClient(
+  link: HttpLink(apiUrl, httpClient: auth.httpClient),
+  cache: GraphQLCache(),
+);
+```
 
 ---
 
