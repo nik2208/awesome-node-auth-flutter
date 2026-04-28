@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -61,22 +60,26 @@ void main() {
           )).thenAnswer((_) async {
         meCallCount++;
         if (meCallCount <= 3) return jsonResponse(401);
-        return jsonResponse(200, {'sub': 'user1', 'email': 'a@b.com', 'isEmailVerified': true});
+        return jsonResponse(
+            200, {'sub': 'user1', 'email': 'a@b.com', 'isEmailVerified': true});
       });
 
       when(() => mockClient.get(
-            Uri.parse('https://api.example.com/auth/profile'),
-            headers: any(named: 'headers'),
-          )).thenAnswer((_) async => meCallCount > 3
-          ? jsonResponse(200, {'sub': 'user1', 'email': 'a@b.com', 'isEmailVerified': true})
-          : jsonResponse(401));
+                Uri.parse('https://api.example.com/auth/profile'),
+                headers: any(named: 'headers'),
+              ))
+          .thenAnswer((_) async => meCallCount > 3
+              ? jsonResponse(200,
+                  {'sub': 'user1', 'email': 'a@b.com', 'isEmailVerified': true})
+              : jsonResponse(401));
 
       when(() => mockClient.get(
-            Uri.parse('https://api.example.com/auth/sessions'),
-            headers: any(named: 'headers'),
-          )).thenAnswer((_) async => meCallCount > 3
-          ? jsonResponse(200, <String, dynamic>{})
-          : jsonResponse(401));
+                Uri.parse('https://api.example.com/auth/sessions'),
+                headers: any(named: 'headers'),
+              ))
+          .thenAnswer((_) async => meCallCount > 3
+              ? jsonResponse(200, <String, dynamic>{})
+              : jsonResponse(401));
 
       when(() => mockClient.post(
             Uri.parse('https://api.example.com/auth/refresh'),
@@ -116,9 +119,9 @@ void main() {
             Uri.parse('https://api.example.com/auth/me'),
             headers: any(named: 'headers'),
           )).thenAnswer((_) async => jsonResponse(401, {
-                'code': 'SESSION_REVOKED',
-                'message': 'Session has been revoked',
-              }));
+            'code': 'SESSION_REVOKED',
+            'message': 'Session has been revoked',
+          }));
 
       await authHttp.get('/me');
 
@@ -139,8 +142,8 @@ void main() {
 
     test('401 on /login does NOT trigger refresh', () async {
       mockEndpoint('/login', 401);
-      await authHttp.post('/login',
-          body: {'email': 'x@y.com', 'password': 'p'});
+      await authHttp
+          .post('/login', body: {'email': 'x@y.com', 'password': 'p'});
       expect(refreshCallCount, equals(0));
     });
 
@@ -170,8 +173,8 @@ void main() {
 
     test('401 on /reset-password does NOT trigger refresh', () async {
       mockEndpoint('/reset-password', 401);
-      await authHttp.post('/reset-password',
-          body: {'password': 'p', 'token': 't'});
+      await authHttp
+          .post('/reset-password', body: {'password': 'p', 'token': 't'});
       expect(refreshCallCount, equals(0));
     });
 
@@ -180,15 +183,14 @@ void main() {
             any(),
             headers: any(named: 'headers'),
           )).thenAnswer((_) async => jsonResponse(401));
-      await authHttp.get('/verify-email',
-          queryParameters: {'token': 'tok'});
+      await authHttp.get('/verify-email', queryParameters: {'token': 'tok'});
       expect(refreshCallCount, equals(0));
     });
 
     test('401 on /2fa/verify does NOT trigger refresh', () async {
       mockEndpoint('/2fa/verify', 401);
-      await authHttp.post('/2fa/verify',
-          body: {'tempToken': 't', 'totpCode': '123456'});
+      await authHttp
+          .post('/2fa/verify', body: {'tempToken': 't', 'totpCode': '123456'});
       expect(refreshCallCount, equals(0));
     });
   });
