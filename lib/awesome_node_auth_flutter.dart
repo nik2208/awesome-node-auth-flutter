@@ -3,7 +3,7 @@
 /// Supports:
 /// - Web (including WASM): cookie-based auth with CSRF protection
 /// - Native (iOS, Android, Desktop): Bearer token with in-memory storage
-library awesome_node_auth_flutter;
+library;
 
 export 'src/auth_client.dart';
 export 'src/auth_events.dart';
