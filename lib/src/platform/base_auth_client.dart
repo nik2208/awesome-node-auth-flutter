@@ -132,8 +132,9 @@ abstract class BaseAuthClient implements AuthClient {
     final response = await httpClient.get('/sessions');
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      if (data is List) {
-        return data
+      final list = (data is Map<String, dynamic>) ? data['sessions'] : data;
+      if (list is List) {
+        return list
             .whereType<Map<String, dynamic>>()
             .map(SessionInfo.fromJson)
             .toList();
@@ -311,7 +312,7 @@ abstract class BaseAuthClient implements AuthClient {
   @override
   Future<AuthResult<void>> send2faMagicLink(String tempToken) async {
     final response = await httpClient.post(
-        '/magic-link/send', body: {'tempToken': tempToken, 'is2fa': true});
+        '/magic-link/send', body: {'tempToken': tempToken, 'mode': '2fa'});
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return AuthResult.success();
     }
@@ -325,7 +326,7 @@ abstract class BaseAuthClient implements AuthClient {
   @override
   Future<AuthResult<void>> sendSmsLogin(String email) async {
     final response =
-        await httpClient.post('/sms/send', body: {'email': email});
+        await httpClient.post('/sms/send', body: {'email': email, 'mode': 'login'});
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return AuthResult.success();
     }
@@ -335,7 +336,7 @@ abstract class BaseAuthClient implements AuthClient {
   @override
   Future<AuthResult<void>> verifySmsLogin(String userId, String code) async {
     final response = await httpClient
-        .post('/sms/verify', body: {'userId': userId, 'code': code});
+        .post('/sms/verify', body: {'userId': userId, 'code': code, 'mode': 'login'});
     if (response.statusCode >= 200 && response.statusCode < 300) {
       await checkSession();
       return AuthResult.success();
@@ -346,7 +347,7 @@ abstract class BaseAuthClient implements AuthClient {
   @override
   Future<AuthResult<void>> send2faSms(String tempToken) async {
     final response =
-        await httpClient.post('/sms/send', body: {'tempToken': tempToken});
+        await httpClient.post('/sms/send', body: {'tempToken': tempToken, 'mode': '2fa'});
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return AuthResult.success();
     }
@@ -393,7 +394,7 @@ abstract class BaseAuthClient implements AuthClient {
   Future<AuthResult<void>> verify2faSetup(String code, String secret) async {
     final response = await httpClient.post(
       '/2fa/verify-setup',
-      body: {'code': code, 'secret': secret},
+      body: {'token': code, 'secret': secret},
     );
     if (response.statusCode >= 200 && response.statusCode < 300) {
       await checkSession();
@@ -516,7 +517,7 @@ abstract class BaseAuthClient implements AuthClient {
   @override
   Future<AuthResult<void>> verifyConflictLinkingToken(String token) async {
     final response =
-        await httpClient.post('/link-verify', body: {'token': token});
+        await httpClient.post('/link-verify', body: {'token': token, 'loginAfterLinking': true});
     if (response.statusCode >= 200 && response.statusCode < 300) {
       await checkSession();
       return AuthResult.success();
@@ -559,6 +560,7 @@ abstract class BaseAuthClient implements AuthClient {
       _state.setUser(null);
       _eventsController
           .add(const AuthEvent(type: AuthEventType.loggedOut));
+      if (!options.headless) redirectToLogin();
       return AuthResult.success();
     }
     return AuthResult.failure(_errorMessage(response));
