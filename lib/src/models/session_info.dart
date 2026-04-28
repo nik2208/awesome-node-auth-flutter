@@ -1,10 +1,21 @@
 /// Represents an active user session.
 class SessionInfo {
+  /// Unique session handle used to identify and revoke this session.
   final String handle;
+
+  /// User-agent string of the browser or client that created this session.
   final String? userAgent;
+
+  /// IP address from which this session was created.
   final String? ipAddress;
+
+  /// Timestamp when this session was created.
   final DateTime? createdAt;
+
+  /// Timestamp of the last activity for this session.
   final DateTime? lastActiveAt;
+
+  /// Whether this is the currently active session for the authenticated user.
   final bool isCurrent;
 
   const SessionInfo({

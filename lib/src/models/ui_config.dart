@@ -1,12 +1,27 @@
 /// UI configuration returned by the backend's `/ui/config` endpoint.
 class UiConfig {
+  /// Whether new user registration is enabled.
   final bool registrationEnabled;
+
+  /// Whether magic-link (passwordless email) login is enabled.
   final bool magicLinkEnabled;
+
+  /// Whether SMS one-time-password login is enabled.
   final bool smsEnabled;
+
+  /// Whether TOTP two-factor authentication is enabled.
   final bool totpEnabled;
+
+  /// Whether GitHub OAuth login is enabled.
   final bool githubEnabled;
+
+  /// Whether Google OAuth login is enabled.
   final bool googleEnabled;
+
+  /// List of OAuth provider names available for login.
   final List<String> availableProviders;
+
+  /// Additional backend-specific configuration fields.
   final Map<String, dynamic>? extra;
 
   const UiConfig({

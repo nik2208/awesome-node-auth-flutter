@@ -270,5 +270,28 @@ void main() {
       expect(events.first, isA<AuthUser>());
       expect(events.last, isNull);
     });
+
+    test('userStream replays current value to late subscribers', () async {
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/login'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async => jsonResponse(200));
+      when(() => mockClient.get(
+            Uri.parse('https://api.example.com/auth/me'),
+            headers: any(named: 'headers'),
+          )).thenAnswer((_) async => jsonResponse(200, _testUser));
+
+      await authClient.login('test@example.com', 'password');
+
+      // Subscribe *after* login — should receive the current user immediately.
+      final received = <AuthUser?>[];
+      final sub = authClient.state.userStream.listen(received.add);
+      await Future<void>.delayed(Duration.zero);
+      await sub.cancel();
+
+      expect(received, isNotEmpty);
+      expect(received.first, isA<AuthUser>());
+    });
   });
 }

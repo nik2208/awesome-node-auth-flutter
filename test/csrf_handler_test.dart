@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:awesome_node_auth_flutter/src/http/csrf_cookie_parser.dart';
 import 'package:awesome_node_auth_flutter/src/http/csrf_handler_stub.dart';
 
 void main() {
@@ -81,6 +82,81 @@ void main() {
     test('always returns false on native', () {
       expect(isSameOrigin('https://example.com/api', '/auth'), isFalse);
       expect(isSameOrigin('/auth/me', '/auth'), isFalse);
+    });
+  });
+
+  group('isSameOriginPure', () {
+    test('relative URL with any prefix → true', () {
+      expect(
+        isSameOriginPure('/auth/me', '/auth', 'https://example.com'),
+        isTrue,
+      );
+    });
+
+    test('absolute same-origin URL with absolute prefix → true', () {
+      expect(
+        isSameOriginPure(
+          'https://api.example.com/auth/me',
+          'https://api.example.com/auth',
+          'https://example.com',
+        ),
+        isTrue,
+      );
+    });
+
+    test('absolute cross-origin URL with absolute prefix → false', () {
+      expect(
+        isSameOriginPure(
+          'https://other.example.com/auth/me',
+          'https://api.example.com/auth',
+          'https://example.com',
+        ),
+        isFalse,
+      );
+    });
+
+    test('absolute same-origin URL with relative prefix → true', () {
+      expect(
+        isSameOriginPure(
+          'https://example.com/auth/me',
+          '/auth',
+          'https://example.com',
+        ),
+        isTrue,
+      );
+    });
+
+    test('absolute cross-origin URL with relative prefix → false', () {
+      expect(
+        isSameOriginPure(
+          'https://other.com/auth/me',
+          '/auth',
+          'https://example.com',
+        ),
+        isFalse,
+      );
+    });
+
+    test('scheme mismatch → false', () {
+      expect(
+        isSameOriginPure(
+          'http://api.example.com/auth/me',
+          'https://api.example.com/auth',
+          'https://example.com',
+        ),
+        isFalse,
+      );
+    });
+
+    test('port mismatch → false', () {
+      expect(
+        isSameOriginPure(
+          'https://api.example.com:8443/auth/me',
+          'https://api.example.com/auth',
+          'https://example.com',
+        ),
+        isFalse,
+      );
     });
   });
 }

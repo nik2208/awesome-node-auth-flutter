@@ -1,21 +1,54 @@
 /// Represents the authenticated user returned by the backend.
 class AuthUser {
+  /// Subject identifier — the stable unique ID for the user.
   final String sub;
+
+  /// The user's email address.
   final String email;
+
+  /// Whether the user's email address has been verified.
   final bool isEmailVerified;
+
+  /// Optional database ID (may differ from [sub] on some backends).
   final String? id;
+
+  /// The user's first name.
   final String? firstName;
+
+  /// The user's last name.
   final String? lastName;
+
+  /// The user's display name.
   final String? name;
+
+  /// The user's phone number.
   final String? phoneNumber;
+
+  /// The user's primary role string.
   final String? role;
+
+  /// The OAuth provider used for the most recent login (e.g. `'github'`).
   final String? loginProvider;
+
+  /// Whether TOTP two-factor authentication is currently enabled.
   final bool? isTotpEnabled;
+
+  /// Whether the user has a password set (may be `false` for OAuth-only users).
   final bool? hasPassword;
+
+  /// Timestamp of the user's last successful login.
   final DateTime? lastLogin;
+
+  /// Arbitrary key-value metadata attached to the user by the backend.
   final Map<String, dynamic>? metadata;
+
+  /// List of roles assigned to the user.
   final List<String>? roles;
+
+  /// List of permissions granted to the user.
   final List<String>? permissions;
+
+  /// Whether the user has administrator privileges.
   final bool? isAdmin;
 
   const AuthUser({
