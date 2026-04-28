@@ -1,8 +1,41 @@
 # awesome_node_auth_flutter
 
+[![pub.dev](https://img.shields.io/pub/v/awesome_node_auth_flutter.svg)](https://pub.dev/packages/awesome_node_auth_flutter)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![WASM ready](https://img.shields.io/badge/WASM-ready-green.svg)]()
+
 Flutter/Dart authentication client for [awesome-node-auth](https://github.com/nik2208/awesome-node-auth) backends.
 
 Supports **web** (including WASM) via HttpOnly cookies + CSRF, and **native** (iOS, Android, Desktop) via Bearer token.
+
+---
+
+## Table of Contents
+
+1. [Installation](#installation)
+2. [Quick start](#quick-start)
+3. [Platform behaviour](#platform-behaviour)
+4. [AuthOptions](#authoptions)
+5. [AuthState & userStream](#authstate--userstream)
+6. [Events stream](#events-stream)
+7. [Registration](#registration)
+8. [Login & 2FA](#login--2fa)
+9. [Two-factor authentication (2FA)](#two-factor-authentication-2fa)
+10. [Password management](#password-management)
+11. [Email management](#email-management)
+12. [Active sessions](#active-sessions)
+13. [Account linking](#account-linking)
+14. [AuthUser model](#authuser-model)
+15. [AuthResult\<T\>](#authresultt)
+16. [Custom TokenStorage](#custom-tokenstorage)
+17. [Internal behaviour — automatic refresh](#internal-behaviour--automatic-refresh)
+18. [Headless mode](#headless-mode)
+19. [SSE stream](#sse-stream)
+20. [UI config](#ui-config)
+21. [WASM compatibility](#wasm-compatibility)
+22. [License](#license)
+
+---
 
 ## Installation
 
@@ -11,54 +44,521 @@ dependencies:
   awesome_node_auth_flutter: ^1.9.0
 ```
 
+---
+
 ## Quick start
 
 ```dart
-final auth = AuthClient(AuthOptions(apiPrefix: '/api/auth'));
-await auth.checkSession();
+import 'package:awesome_node_auth_flutter/awesome_node_auth_flutter.dart';
 
-// Listen to state
+// 1. Create the client (checkSession is called automatically)
+final auth = AuthClient(AuthOptions(apiPrefix: '/api/auth'));
+
+// 2. React to state changes
 auth.state.userStream.listen((user) {
-  if (user != null) print('Logged in: ${user.email}');
+  if (user != null) {
+    print('Logged in: ${user.email}');
+  } else {
+    print('Not authenticated');
+  }
 });
 
-// Login
+// 3. Login
 final result = await auth.login('user@example.com', 'password');
-if (result.requires2fa) {
-  // handle 2FA with result.tempToken
+if (result.success && !result.requires2fa) {
+  print('Welcome, ${result.data?.firstName}');
+} else if (result.requires2fa) {
+  // Proceed to the 2FA step — see the Login & 2FA section
 }
 ```
+
+---
 
 ## Platform behaviour
 
-| Platform | Auth mode | Token management |
-|---|---|---|
-| Web / WASM | Cookie (HttpOnly) + CSRF | Browser |
-| iOS / Android / Desktop | Bearer token | In-memory (override with custom `TokenStorage`) |
+| Platform | Auth mode | Token management | CSRF |
+|---|---|---|---|
+| Web / WASM | Cookie (HttpOnly) | Browser automatic | `X-CSRF-Token` same-origin only |
+| iOS / Android / Desktop | Bearer token | `TokenStorage` (in-memory default) | N/A |
 
-## Configuration
+On **web** the browser handles cookie storage. The client reads the CSRF token from `document.cookie` and attaches the `X-CSRF-Token` header to every same-origin mutating request.
+
+On **native** platforms the access token is stored in `TokenStorage` (default: `InMemoryTokenStorage`). Provide a custom implementation backed by `flutter_secure_storage` for persistence across app restarts.
+
+---
+
+## AuthOptions
+
+All constructor parameters are optional; sensible defaults are provided.
 
 ```dart
-AuthOptions(
-  apiPrefix: '/api/auth',     // Backend prefix (relative or absolute)
-  loginUrl: '/login',         // Redirect URL shown on session expiry
-  headless: false,            // Set true to disable auto-redirect on logout
-  initializeOnStartup: true,  // Call checkSession() automatically
-)
+final auth = AuthClient(
+  AuthOptions(
+    apiPrefix: '/api/auth',          // Relative or absolute base URL for auth endpoints (default: '/auth')
+    homeUrl: '/',                    // Redirect destination after successful login (default: '/')
+    loginUrl: '/login',              // Redirect destination when session expires (web, headless: false only)
+                                     // Defaults to '$apiPrefix/ui/login' when omitted
+    headless: false,                 // true = disable automatic redirects; listen to events instead
+    initializeOnStartup: true,       // Calls checkSession() automatically on construction (default: true)
+    tokenStorage: MySecureStorage(), // Native only: custom persistent storage for Bearer tokens
+  ),
+);
+
+// If initializeOnStartup is false, call checkSession() explicitly:
+await auth.checkSession();
 ```
 
-## Custom token storage
+---
+
+## AuthState & userStream
+
+`auth.state` is the reactive authentication state object. It exposes:
+
+| Member | Type | Description |
+|---|---|---|
+| `userStream` | `Stream<AuthUser?>` | Emits the current user on every change. **Replays the current value** to new subscribers immediately. |
+| `currentUser` | `AuthUser?` | Synchronous access to the current user. |
+| `isAuthenticated` | `bool` | `true` when a user is signed in. |
+| `isInitialized` | `bool` | `true` after the first `checkSession()` call completes. |
+
+### StreamBuilder (Flutter)
 
 ```dart
-class SecureTokenStorage implements TokenStorage {
-  @override
-  Future<String?> readAccessToken() async { /* ... */ }
-  @override
-  Future<void> writeAccessToken(String? token) async { /* ... */ }
-  @override
-  Future<void> clear() async { /* ... */ }
+StreamBuilder<AuthUser?>(
+  stream: auth.state.userStream,
+  builder: (context, snapshot) {
+    final user = snapshot.data;
+    if (!auth.state.isInitialized) {
+      return const CircularProgressIndicator();
+    }
+    if (user == null) {
+      return const LoginPage();
+    }
+    return HomePage(user: user);
+  },
+);
+```
+
+### Synchronous access
+
+```dart
+if (auth.state.isAuthenticated) {
+  final user = auth.state.currentUser!;
+  print(user.email);
+}
+```
+
+> **Note:** `userStream` is implemented with `async*` + `yield` so it always replays the latest value to new subscribers before emitting future changes.
+
+---
+
+## Events stream
+
+`auth.events` is a broadcast stream of `AuthEvent` objects. Subscribe to it to react to lifecycle changes outside the UI tree (e.g. in a GoRouter redirect, background service, or logging layer).
+
+```dart
+auth.events.listen((event) {
+  switch (event.type) {
+    case AuthEventType.initialized:
+      // First checkSession() completed (success or failure)
+      print('Auth ready. User: ${event.user?.email}');
+    case AuthEventType.loggedIn:
+      // User authenticated successfully
+      print('Logged in as ${event.user?.email}');
+    case AuthEventType.loggedOut:
+      // User logged out (manually or after a failed refresh)
+      print('Logged out');
+    case AuthEventType.sessionExpired:
+      // Access token refresh failed — session is gone
+      print('Session expired');
+    case AuthEventType.sessionRevoked:
+      // Backend returned SESSION_REVOKED — forced logout
+      print('Session was revoked server-side');
+  }
+});
+```
+
+| Event type | Trigger |
+|---|---|
+| `initialized` | First `checkSession()` completed (regardless of outcome) |
+| `loggedIn` | Successful login or magic-link / SMS verification |
+| `loggedOut` | Explicit `logout()` or failed token refresh |
+| `sessionExpired` | Token refresh call returned a non-2xx response |
+| `sessionRevoked` | Backend returned `{ "code": "SESSION_REVOKED" }` |
+
+---
+
+## Registration
+
+```dart
+final result = await auth.register(
+  'user@example.com', // email
+  'strongPassword1!', // password
+  'Jane',             // firstName
+  'Doe',              // lastName
+);
+
+if (result.success) {
+  print('New user ID: ${result.data}');
+} else {
+  print('Registration failed: ${result.error}');
+}
+```
+
+---
+
+## Login & 2FA
+
+### Simple login (no 2FA)
+
+```dart
+final result = await auth.login('user@example.com', 'password');
+
+if (result.success && !result.requires2fa) {
+  // Authenticated — state is already updated
+  print('Welcome ${result.data?.firstName}');
+} else if (!result.success) {
+  print('Login failed: ${result.error}');
+}
+```
+
+### Login with 2FA required
+
+```dart
+final result = await auth.login('user@example.com', 'password');
+
+if (result.success && !result.requires2fa) {
+  // Direct login — no 2FA needed
+} else if (result.requires2fa && !result.requires2FASetup) {
+  // User has 2FA enabled — verify with one of the available methods
+  print('Available 2FA methods: ${result.availableMethods}');
+  // Use result.tempToken for the chosen 2FA call
+  await _handle2fa(result.tempToken!, result.availableMethods);
+} else if (result.requires2fa && result.requires2FASetup) {
+  // User is required to set up 2FA before continuing
+  await _setup2fa(result.tempToken!);
+}
+```
+
+`LoginResult` extends `AuthResult<AuthUser>` with additional fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `requires2fa` | `bool` | `true` when a 2FA step is needed before authentication completes |
+| `requires2FASetup` | `bool` | `true` when the user must enrol in 2FA first |
+| `tempToken` | `String?` | Temporary session token to pass to the 2FA verification calls |
+| `availableMethods` | `List<String>` | Methods the user can use (e.g. `['totp', 'sms', 'magic-link']`) |
+
+---
+
+## Two-factor authentication (2FA)
+
+### TOTP
+
+```dart
+// 1. Start setup — returns a QR code and secret
+final setup = await auth.setup2fa();
+if (setup.success) {
+  final qrCode = setup.data!.qrCode;   // data URL — render with Image.network / Image.memory
+  final secret = setup.data!.secret;   // show as fallback text entry
 }
 
+// 2. Confirm setup with the code from the authenticator app
+final verify = await auth.verify2faSetup(totpCode, secret);
+if (verify.success) {
+  print('TOTP enabled');
+}
+
+// 3. During login, validate the code using the temp token
+final validate = await auth.validate2fa(tempToken, totpCode);
+if (validate.success) {
+  // User is now fully authenticated — state updated automatically
+}
+
+// 4. Disable TOTP (requires active session)
+await auth.disable2fa();
+```
+
+### SMS one-time password
+
+```dart
+// ── Passwordless login via SMS OTP ───────────────────────────────────────────
+
+// 1. Send an OTP to the user's registered phone
+await auth.sendSmsLogin('user@example.com');
+
+// 2. Verify the OTP (userId is returned by the backend in the send response)
+final result = await auth.verifySmsLogin(userId, otpCode);
+if (result.success) {
+  // Authenticated — state updated automatically
+}
+
+// ── 2FA step via SMS ─────────────────────────────────────────────────────────
+
+// 1. Request an SMS OTP during the 2FA step of a password login
+await auth.send2faSms(tempToken);
+
+// 2. Verify the code
+final result2fa = await auth.validateSms(tempToken, otpCode);
+if (result2fa.success) {
+  // Fully authenticated — state updated automatically
+}
+
+// ── Register a phone number ───────────────────────────────────────────────────
+await auth.addPhone('+1234567890');
+```
+
+### Magic link
+
+```dart
+// ── Passwordless login via magic link ────────────────────────────────────────
+
+// 1. Send a magic link to the user's email
+await auth.sendMagicLink('user@example.com');
+
+// 2. When the user clicks the link, the app receives the token (e.g. via deep link)
+final result = await auth.verifyMagicLink(token);
+if (result.success) {
+  // Authenticated — state updated automatically
+}
+
+// ── 2FA step via magic link ───────────────────────────────────────────────────
+
+// 1. Send the magic link using the temp token from the login flow
+await auth.send2faMagicLink(tempToken);
+
+// 2. Verify the token when the user clicks the link
+final result2fa = await auth.verifyMagicLink(token);
+```
+
+---
+
+## Password management
+
+```dart
+// Initiate password recovery — sends a reset email
+final forgot = await auth.forgotPassword('user@example.com');
+
+// Reset password using the token from the recovery email
+final reset = await auth.resetPassword('newPassword1!', resetToken);
+
+// Change password for an authenticated user
+final change = await auth.changePassword('currentPassword', 'newPassword1!');
+
+// Set a password for an OAuth-only account (no existing password)
+final set = await auth.setPassword('newPassword1!');
+
+// Check result
+if (reset.success) {
+  print('Password updated');
+} else {
+  print('Error: ${reset.error}');
+}
+```
+
+---
+
+## Email management
+
+```dart
+// Resend the verification email for the current user
+await auth.resendVerificationEmail();
+
+// Verify the email using the token from the verification email
+final verify = await auth.verifyEmail(emailToken);
+
+// Request an email address change (sends a confirmation to newEmail)
+await auth.requestEmailChange('new@example.com');
+
+// Confirm the email change using the token from the confirmation email
+final confirm = await auth.confirmEmailChange(confirmToken);
+```
+
+---
+
+## Active sessions
+
+```dart
+// List all active sessions for the current user
+final sessions = await auth.getActiveSessions();
+
+for (final session in sessions) {
+  print('Handle:      ${session.handle}');
+  print('User-agent:  ${session.userAgent}');
+  print('IP address:  ${session.ipAddress}');
+  print('Created at:  ${session.createdAt}');
+  print('Last active: ${session.lastActiveAt}');
+  print('Current:     ${session.isCurrent}');
+  print('---');
+}
+
+// Revoke a specific session (e.g. from a "sign out everywhere" screen)
+final result = await auth.revokeSession(session.handle);
+if (result.success) {
+  print('Session revoked');
+}
+```
+
+`SessionInfo` fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `handle` | `String` | Unique session identifier — pass to `revokeSession()` |
+| `userAgent` | `String?` | User-agent string of the client |
+| `ipAddress` | `String?` | IP address of the client |
+| `createdAt` | `DateTime?` | When the session was created |
+| `lastActiveAt` | `DateTime?` | Timestamp of the last activity |
+| `isCurrent` | `bool` | `true` for the session that belongs to the current request |
+
+---
+
+## Account linking
+
+Link a second OAuth provider to an existing account.
+
+```dart
+// 1. Request a linking email for the given provider
+await auth.requestLinkingEmail('user@example.com', 'github');
+
+// 2. Verify the token from the linking email
+await auth.verifyLinkingToken(linkingToken, 'github');
+
+// ── Conflict resolution ───────────────────────────────────────────────────────
+// When the provider account already belongs to another user, a conflict occurs.
+
+// 1. Request a conflict-resolution linking email
+await auth.requestConflictLinkingEmail('user@example.com', 'github');
+
+// 2. Verify the conflict token (merges accounts and logs the user in)
+await auth.verifyConflictLinkingToken(conflictToken);
+
+// ── Manage linked accounts ────────────────────────────────────────────────────
+
+// List all linked OAuth providers for the current user
+final accounts = await auth.getLinkedAccounts();
+// Returns a List<dynamic> where each item has 'provider' and 'providerAccountId'
+
+// Remove a linked provider
+await auth.unlinkAccount('github', providerAccountId);
+```
+
+---
+
+## AuthUser model
+
+Every field returned by the backend `/me` endpoint is mapped to this model.
+
+| Field | Type | Description |
+|---|---|---|
+| `sub` | `String` | Stable unique user identifier |
+| `email` | `String` | Email address |
+| `isEmailVerified` | `bool` | Whether the email has been verified |
+| `id` | `String?` | Optional database ID (may differ from `sub`) |
+| `firstName` | `String?` | First name |
+| `lastName` | `String?` | Last name |
+| `name` | `String?` | Display name |
+| `phoneNumber` | `String?` | Registered phone number |
+| `role` | `String?` | Primary role string |
+| `roles` | `List<String>?` | All roles assigned to the user |
+| `permissions` | `List<String>?` | Permissions granted to the user |
+| `isAdmin` | `bool?` | Whether the user has administrator privileges |
+| `loginProvider` | `String?` | OAuth provider used for the last login (e.g. `'github'`) |
+| `isTotpEnabled` | `bool?` | Whether TOTP 2FA is active |
+| `hasPassword` | `bool?` | `false` for OAuth-only accounts that have never set a password |
+| `lastLogin` | `DateTime?` | Timestamp of the most recent login |
+| `metadata` | `Map<String, dynamic>?` | Arbitrary key-value data attached by the backend |
+
+```dart
+final user = auth.state.currentUser!;
+
+print(user.sub);              // '64a1f...'
+print(user.email);            // 'jane@example.com'
+print(user.isEmailVerified);  // true
+print(user.firstName);        // 'Jane'
+print(user.roles);            // ['user', 'editor']
+print(user.isAdmin);          // false
+print(user.isTotpEnabled);    // true
+print(user.hasPassword);      // true
+print(user.loginProvider);    // null (password login)
+```
+
+---
+
+## AuthResult\<T\>
+
+Most `AuthClient` methods return `AuthResult<T>`. `LoginResult` is a subtype returned only by `login()`.
+
+### `AuthResult<T>`
+
+| Field | Type | Description |
+|---|---|---|
+| `success` | `bool` | `true` when the operation succeeded |
+| `data` | `T?` | Payload on success (`null` on failure) |
+| `error` | `String?` | Human-readable error message on failure |
+| `errorCode` | `String?` | Machine-readable error code (e.g. `"SESSION_REVOKED"`) |
+
+```dart
+final result = await auth.changePassword('old', 'new');
+if (result.success) {
+  print('Done');
+} else {
+  print('${result.errorCode}: ${result.error}');
+}
+```
+
+### `LoginResult` (extends `AuthResult<AuthUser>`)
+
+| Field | Type | Description |
+|---|---|---|
+| `requires2fa` | `bool` | `true` when a 2FA verification step is required |
+| `requires2FASetup` | `bool` | `true` when the user must set up 2FA before continuing |
+| `tempToken` | `String?` | Temporary token for the 2FA verification calls |
+| `availableMethods` | `List<String>` | 2FA methods available to this user |
+
+---
+
+## Custom TokenStorage
+
+On native platforms, provide a custom `TokenStorage` implementation to persist tokens across app restarts. `flutter_secure_storage` is **not** a dependency of this package — add it to your own `pubspec.yaml`.
+
+```yaml
+# In your app's pubspec.yaml
+dependencies:
+  flutter_secure_storage: ^9.0.0
+```
+
+```dart
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:awesome_node_auth_flutter/awesome_node_auth_flutter.dart';
+
+class SecureTokenStorage implements TokenStorage {
+  final _storage = const FlutterSecureStorage();
+
+  static const _accessKey  = 'auth_access_token';
+  static const _refreshKey = 'auth_refresh_token';
+
+  @override
+  Future<String?> readAccessToken() => _storage.read(key: _accessKey);
+
+  @override
+  Future<void> writeAccessToken(String token) =>
+      _storage.write(key: _accessKey, value: token);
+
+  @override
+  Future<String?> readRefreshToken() => _storage.read(key: _refreshKey);
+
+  @override
+  Future<void> writeRefreshToken(String token) =>
+      _storage.write(key: _refreshKey, value: token);
+
+  @override
+  Future<void> clear() async {
+    await _storage.delete(key: _accessKey);
+    await _storage.delete(key: _refreshKey);
+  }
+}
+
+// Pass it to AuthOptions
 final auth = AuthClient(
   AuthOptions(
     apiPrefix: '/api/auth',
@@ -67,20 +567,161 @@ final auth = AuthClient(
 );
 ```
 
-## Supported features
+`TokenStorage` interface:
 
-- Login / register / logout
-- Magic-link authentication
-- SMS one-time-password login
-- TOTP two-factor authentication
-- SMS two-factor authentication
-- Magic-link two-factor authentication
-- Email verification and change
-- Password reset and change
-- Account linking and conflict resolution
-- Session management (list active sessions, revoke session)
-- Account deletion
-- Server-sent events (`getToolsStream`) — web only
+| Method | Description |
+|---|---|
+| `readAccessToken()` | Returns the stored access token, or `null` |
+| `writeAccessToken(token)` | Persists a new access token |
+| `readRefreshToken()` | Returns the stored refresh token, or `null` |
+| `writeRefreshToken(token)` | Persists a new refresh token |
+| `clear()` | Deletes all stored tokens (called on logout) |
+
+---
+
+## Internal behaviour — automatic refresh
+
+The client transparently handles token expiry so individual API calls do not need to manage refresh logic.
+
+### Flow
+
+1. Every request that receives a `401` or `403` response checks whether the endpoint is in the **no-retry list** (see below).
+2. If eligible for retry, the client calls `POST $apiPrefix/refresh`.
+3. On success (native) the new `accessToken` from the response body is written back to `TokenStorage`. On web the browser updates the cookie automatically.
+4. The original request is retried with the new token.
+5. If the refresh also fails, the session is considered expired and `handleLogout()` is called.
+
+### Concurrent refresh deduplication
+
+If multiple requests fail at the same time, only **one** refresh call is made. All concurrent requests wait for that single call to complete before retrying. This prevents the `POST /refresh` endpoint from being hammered.
+
+### Session revoked
+
+When the backend responds with `{ "code": "SESSION_REVOKED" }`, the client skips the refresh attempt and immediately calls `handleLogout(revoked: true)`, which emits `AuthEventType.sessionRevoked`.
+
+### Endpoints excluded from auto-retry
+
+The following endpoints always receive the raw response — they are never retried after a 401/403:
+
+| Endpoint segment | Reason |
+|---|---|
+| `login` | Credentials failure, not a token issue |
+| `logout` | Already logging out |
+| `refresh` | Avoid infinite loop |
+| `register` | No session expected |
+| `forgot-password` | Unauthenticated flow |
+| `reset-password` | Token-based, not session-based |
+| `verify-email` | Token-based |
+| `2fa/verify` | Uses a temp token, not a session token |
+
+### Web vs native refresh
+
+| | Web | Native |
+|---|---|---|
+| Token location | HttpOnly cookie | `TokenStorage` |
+| Refresh request body | Empty (browser sends the HttpOnly cookie automatically) | Empty body; `Authorization: Bearer <accessToken>` header is sent so the backend can identify the session |
+| New token delivery | Cookie set by server | `accessToken` field in JSON response body |
+
+---
+
+## Headless mode
+
+Set `headless: true` to disable all automatic browser redirects. In this mode the client never calls `window.location.href` — your code is responsible for reacting to events and navigating appropriately.
+
+```dart
+final auth = AuthClient(
+  AuthOptions(
+    apiPrefix: '/api/auth',
+    headless: true,           // No automatic redirects
+  ),
+);
+
+auth.events.listen((event) {
+  if (event.type == AuthEventType.loggedOut ||
+      event.type == AuthEventType.sessionExpired ||
+      event.type == AuthEventType.sessionRevoked) {
+    // Navigate to login using your router
+    GoRouter.of(context).go('/login');
+  }
+});
+```
+
+**When to use headless mode:**
+
+- Apps using **GoRouter** or **AutoRoute** for programmatic navigation.
+- **Web iframes** where redirecting the frame would break the embedding page.
+- Any scenario where the auth client must not touch `window.location`.
+
+---
+
+## SSE stream
+
+The client exposes a server-sent events stream from `$apiPrefix/tools/stream`. This is only available on **web**; on native platforms `getToolsStream()` returns `Stream.empty()`.
+
+```dart
+// Web: live event stream from the backend
+auth.getToolsStream().listen(
+  (event) => print('SSE event: $event'),
+  onDone: () => print('Stream closed'),
+);
+```
+
+The stream automatically closes when the `EventSource` emits an error (e.g. server disconnect). To reconnect, call `getToolsStream()` again.
+
+---
+
+## UI config
+
+Load feature flags and enabled providers from the backend to drive conditional UI rendering.
+
+```dart
+final config = await auth.loadUiConfig();
+if (config != null) {
+  print('Registration enabled: ${config.registrationEnabled}');
+  print('Magic link enabled:   ${config.magicLinkEnabled}');
+  print('SMS enabled:          ${config.smsEnabled}');
+  print('TOTP enabled:         ${config.totpEnabled}');
+  print('GitHub OAuth:         ${config.githubEnabled}');
+  print('Google OAuth:         ${config.googleEnabled}');
+  print('Providers:            ${config.availableProviders}');
+}
+```
+
+`UiConfig` fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `registrationEnabled` | `bool` | Whether new user registration is allowed |
+| `magicLinkEnabled` | `bool` | Whether magic-link (passwordless) login is enabled |
+| `smsEnabled` | `bool` | Whether SMS OTP login is enabled |
+| `totpEnabled` | `bool` | Whether TOTP 2FA is enabled |
+| `githubEnabled` | `bool` | Whether GitHub OAuth login is enabled |
+| `googleEnabled` | `bool` | Whether Google OAuth login is enabled |
+| `availableProviders` | `List<String>` | All enabled OAuth provider names |
+| `extra` | `Map<String, dynamic>?` | Backend-specific extra configuration |
+
+---
+
+## WASM compatibility
+
+This package is WASM-ready. The following design decisions ensure compatibility:
+
+- **`package:web`** is used instead of `dart:html` for all DOM/browser APIs (e.g. `window.location`, `EventSource`, cookie reading).
+- **`package:http`** is used for all HTTP calls instead of `dart:io`'s `HttpClient`.
+- Platform-specific code is gated with **conditional imports** using `dart.library.js_interop`:
+
+```dart
+import 'platform/native_auth_client.dart'
+    if (dart.library.js_interop) 'platform/web_auth_client.dart' as platform;
+```
+
+### Verify WASM build
+
+```bash
+flutter build web --wasm
+```
+
+---
 
 ## License
 
