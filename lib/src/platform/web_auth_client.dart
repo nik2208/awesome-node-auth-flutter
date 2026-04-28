@@ -21,10 +21,11 @@ AuthClient createAuthClient(AuthOptions options, {http.Client? httpClient}) {
   final authHttp = AuthHttpClient(
     inner: inner,
     apiPrefix: options.apiPrefix,
-    // Always call readCsrfToken — it returns null when no cookie is present,
-    // which causes the header to be omitted. For cross-origin APIs, CORS will
-    // block the request regardless of this header.
-    csrfProvider: csrf.readCsrfToken,
+    // Attach the CSRF token only for same-origin requests so it is never
+    // sent to external APIs. `isSameOrigin` compares the request URL against
+    // the backend origin derived from `apiPrefix`.
+    csrfProvider: (url) =>
+        csrf.isSameOrigin(url, options.apiPrefix) ? csrf.readCsrfToken() : null,
   );
 
   return WebAuthClient(options, authHttp);

@@ -20,8 +20,11 @@ const _kNoRetryEndpoints = {
 /// Two-segment endpoint that must be excluded separately.
 const _kNoRetryTwoSegment = '2fa/verify';
 
-/// Provides CSRF token for web (returns null on native).
-typedef CsrfTokenProvider = String? Function();
+/// Provides CSRF token for web given the full request URL.
+///
+/// The [url] parameter allows the provider to perform a same-origin check
+/// and return `null` for cross-origin requests so the header is omitted.
+typedef CsrfTokenProvider = String? Function(String url);
 
 /// Provides the current Bearer access token (native only).
 typedef BearerTokenProvider = Future<String?> Function();
@@ -109,6 +112,7 @@ class AuthHttpClient {
   // -------------------------------------------------------------------------
 
   Future<Map<String, String>> _buildHeaders(
+    String path,
     Map<String, String>? extra, {
     bool includeAuthHeaders = true,
   }) async {
@@ -119,7 +123,8 @@ class AuthHttpClient {
     };
 
     if (includeAuthHeaders) {
-      final csrf = _csrfProvider?.call();
+      final url = _buildUri(path).toString();
+      final csrf = _csrfProvider?.call(url);
       if (csrf != null) headers['X-CSRF-Token'] = csrf;
 
       if (_bearerProvider != null) {
@@ -173,7 +178,7 @@ class AuthHttpClient {
     Object? body,
     Map<String, String>? queryParameters,
   }) async {
-    final allHeaders = await _buildHeaders(headers);
+    final allHeaders = await _buildHeaders(path, headers);
     final response =
         await _rawSend(method, path, allHeaders, body, queryParameters);
 
@@ -223,6 +228,18 @@ class AuthHttpClient {
   // 401 / 403 interception
   // -------------------------------------------------------------------------
 
+  /// Returns `true` when the response body contains a JSON object with
+  /// `"code": "SESSION_REVOKED"`, matching the backend contract.
+  bool _isSessionRevoked(http.Response response) {
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        return decoded['code'] == _kSessionRevoked;
+      }
+    } catch (_) {}
+    return false;
+  }
+
   Future<http.Response> _handleUnauthorized(
     String method,
     String path,
@@ -231,14 +248,14 @@ class AuthHttpClient {
     Object? body,
     Map<String, String>? queryParameters,
   }) async {
-    if (response.body.contains(_kSessionRevoked)) {
+    if (_isSessionRevoked(response)) {
       await _onLogout?.call(revoked: true);
       return response;
     }
 
     final refreshed = await _doRefresh();
     if (refreshed) {
-      final retryHeaders = await _buildHeaders(headers);
+      final retryHeaders = await _buildHeaders(path, headers);
       return _rawSend(method, path, retryHeaders, body, queryParameters);
     } else {
       await _onLogout?.call(revoked: false);
@@ -275,7 +292,7 @@ class AuthHttpClient {
   /// Calls `POST $apiPrefix/refresh` directly, bypassing retry logic.
   Future<bool> callRefreshEndpoint() async {
     try {
-      final headers = await _buildHeaders(null);
+      final headers = await _buildHeaders('/refresh', null);
       final response = await _rawSend('POST', '/refresh', headers, null, null);
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
