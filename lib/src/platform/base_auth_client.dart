@@ -506,13 +506,13 @@ abstract class BaseAuthClient implements AuthClient {
   @override
   Future<AuthResult<void>> requestConflictLinkingEmail(
       String email, String provider) async {
+    // Semantic alias of requestLinkingEmail — the payload is identical.
+    // The backend does not receive a discriminator in the body; it infers the
+    // context (standard linking vs. conflict-linking) from the presence or
+    // absence of a valid auth token in the request.
     final response = await httpClient.apiPost(
       '/link-request',
-      // `isConflict: true` signals to the backend that this is a conflict-linking
-      // request (two accounts with the same email from different providers).
-      // Verify that your awesome-node-auth backend version supports this field;
-      // if unused it is safely ignored by the server.
-      body: {'email': email, 'provider': provider, 'isConflict': true},
+      body: {'email': email, 'provider': provider},
     );
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return AuthResult.success();
