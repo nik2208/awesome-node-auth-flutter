@@ -40,6 +40,9 @@ abstract class BaseAuthClient implements AuthClient {
   }
 
   void _initialize() {
+    // Note: `initialized` is emitted regardless of whether checkSession()
+    // succeeds or fails. It signals that the first session check has completed,
+    // not that the user is authenticated. Check `state.isAuthenticated` separately.
     checkSession().then((_) {
       _state.setInitialized();
       _eventsController.add(const AuthEvent(type: AuthEventType.initialized));
@@ -505,6 +508,10 @@ abstract class BaseAuthClient implements AuthClient {
       String email, String provider) async {
     final response = await httpClient.apiPost(
       '/link-request',
+      // `isConflict: true` signals to the backend that this is a conflict-linking
+      // request (two accounts with the same email from different providers).
+      // Verify that your awesome-node-auth backend version supports this field;
+      // if unused it is safely ignored by the server.
       body: {'email': email, 'provider': provider, 'isConflict': true},
     );
     if (response.statusCode >= 200 && response.statusCode < 300) {

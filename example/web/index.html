@@ -34,6 +34,34 @@
 </head>
 <body>
   <!--
+    awesome-node-auth integration (web only):
+
+    The script below loads the auth.js UI helper from the backend server.
+    It runs in "headless" mode so Flutter manages routing and UI — auth.js
+    only initialises the CSRF cookie and session state on the browser side.
+
+    NOTE: This is the analog of the AuthHttpClient interceptor on the
+    Dart side. On web, the browser manages HttpOnly cookies automatically;
+    auth.js sets up the CSRF token that AuthHttpClient reads via
+    document.cookie and injects as X-CSRF-Token on same-origin requests.
+
+    In production replace http://localhost:3000 with your API origin.
+    If the script is unavailable (e.g. during native/desktop builds),
+    the AwesomeNodeAuth guard is a no-op.
+  -->
+  <script src="http://localhost:3000/auth/ui/auth.js" crossorigin="anonymous"
+          onerror="console.warn('auth.js not loaded — running without server-side session init')">
+  </script>
+  <script>
+    if (window.AwesomeNodeAuth) {
+      window.AwesomeNodeAuth.init({
+        apiPrefix: 'http://localhost:3000/auth',
+        headless: true, // Flutter handles routing; auth.js only manages CSRF/session
+      });
+    }
+  </script>
+
+  <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader
     or to give the user feedback during the initialization process.

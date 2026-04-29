@@ -167,8 +167,16 @@ Authorization: Bearer <access-token>
 This example uses:
 - **Hardcoded secrets** (change in production via `.env`)
 - **In-memory storage** (data lost on server restart)
-- **Disabled CSRF** (appropriate for mobile/Bearer token clients)
+- **Disabled CSRF** (appropriate for native/mobile Bearer token clients — see note below)
 - **HTTP over localhost** (no HTTPS)
+
+> **CSRF note:** The example server sets `csrf: { enabled: false }` to support native
+> (iOS/Android/Desktop) clients that authenticate with Bearer tokens. When your Flutter
+> **web** app runs against the same server, the `AuthHttpClient` sends an `X-CSRF-Token`
+> header but the server currently ignores it. For a production web deployment, enable CSRF
+> on the server (`csrf: { enabled: true }`) — `awesome-node-auth` detects the auth strategy
+> from the `X-Auth-Strategy` request header and applies CSRF validation only to
+> cookie-based (web) sessions.
 
 ### For Production
 

@@ -52,6 +52,10 @@ class InMemoryUserStore {
   }
 
   async updateRefreshToken(userId, token, expiry) {
+    // Token rotation is handled automatically by awesome-node-auth.
+    // Your IUserStore implementation (this class implements that interface)
+    // only needs to persist the current refresh token via updateRefreshToken —
+    // the library handles old-token invalidation automatically.
     const user = this.users.get(userId);
     if (user) {
       user.refreshToken = token;
@@ -255,7 +259,11 @@ const authConfig = {
     httpOnly: true,
     sameSite: 'lax',
   },
-  // Disable CSRF for mobile/Flutter clients using Bearer tokens
+  // CSRF is disabled here to support native (Bearer token) clients.
+  // For web/WASM clients in production, enable CSRF:
+  //   csrf: { enabled: true }
+  // awesome-node-auth handles both strategies on the same server —
+  // it detects the auth strategy from the X-Auth-Strategy header.
   csrf: { enabled: false },
 };
 
