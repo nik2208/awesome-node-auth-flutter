@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.9.4
+
+- Doc fix: clarify that `requestConflictLinkingEmail` is a semantic alias of `requestLinkingEmail` with identical payload, and that the backend infers the context from the presence or absence of a valid auth token in the request. The `isConflict` field is no longer sent in the request body, but if your backend version supports it, it is safely ignored if unused.
+
 ## 1.9.3
 
 - Fixed auth/httpClient wrapper

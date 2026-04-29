@@ -43,7 +43,7 @@ Supports **web** (including WASM) via HttpOnly cookies + CSRF, and **native** (i
 
 ```yaml
 dependencies:
-  awesome_node_auth_flutter: ^1.9.3
+  awesome_node_auth_flutter: ^1.9.4
 ```
 
 ---
