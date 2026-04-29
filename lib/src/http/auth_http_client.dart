@@ -331,6 +331,10 @@ class AuthHttpClient extends http.BaseClient {
   Future<bool> callRefreshEndpoint() async {
     try {
       final headers = await _buildHeaders('/refresh', null);
+      // On web: _bearerProvider is null — the refresh token is an HttpOnly cookie
+      // managed by the browser. No body is sent; the cookie is included automatically.
+      // On native: _bearerProvider is set, _refreshToken is populated from the login
+      // response body. If null (e.g. before first login), the refresh will fail gracefully.
       final body = (_bearerProvider != null && _refreshToken != null)
           ? {'refreshToken': _refreshToken}
           : null;

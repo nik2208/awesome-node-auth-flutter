@@ -139,6 +139,28 @@ final auth = AuthClient(
 await auth.checkSession();
 ```
 
+> **⚠️ Race condition with `initializeOnStartup: true`**
+>
+> `initializeOnStartup: true` (the default) calls `checkSession()` as a fire-and-forget
+> task in the constructor — Dart constructors cannot `await` it. If you make authenticated
+> calls immediately after constructing `AuthClient`, the session may not be loaded yet and
+> you could receive unexpected 401 responses.
+>
+> **Option 1 — wait for the `initialized` event before making authenticated calls:**
+> ```dart
+> await auth.events.firstWhere((e) => e.type == AuthEventType.initialized);
+> // Now safe to make authenticated calls
+> ```
+>
+> **Option 2 — disable `initializeOnStartup` and `await` explicitly:**
+> ```dart
+> final auth = AuthClient(AuthOptions(
+>   apiPrefix: '/api/auth',
+>   initializeOnStartup: false,
+> ));
+> await auth.checkSession(); // explicit await before use
+> ```
+
 ---
 
 ## AuthState & userStream
@@ -216,6 +238,11 @@ auth.events.listen((event) {
 | `loggedOut` | Explicit `logout()` or failed token refresh |
 | `sessionExpired` | Token refresh call returned a non-2xx response |
 | `sessionRevoked` | Backend returned `{ "code": "SESSION_REVOKED" }` |
+
+> **Note:** The `initialized` event is emitted whether `checkSession()` succeeds **or** fails
+> (e.g. network error, 401 on startup). It only signals that the first session check has
+> completed — not that the user is authenticated. Always check `auth.state.isAuthenticated`
+> or the `event.user` value before treating the session as valid.
 
 ---
 
