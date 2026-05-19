@@ -533,7 +533,7 @@ abstract class BaseAuthClient implements AuthClient {
     final response = await httpClient.apiPost('/link-verify',
         body: {'token': token, 'loginAfterLinking': true});
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      await checkSession();
+      await _emitLoggedInEvent();
       return AuthResult.success();
     }
     return AuthResult.failure(_errorMessage(response));

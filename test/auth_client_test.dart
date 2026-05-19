@@ -430,5 +430,29 @@ void main() {
       await eventFuture;
       expect(authClient.state.currentUser?.email, equals('updated@example.com'));
     });
+
+    test('verifyConflictLinkingToken emits loggedIn event', () async {
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/link-verify'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async => jsonResponse(200));
+      when(() => mockClient.get(
+            Uri.parse('https://api.example.com/auth/me'),
+            headers: any(named: 'headers'),
+          )).thenAnswer((_) async => jsonResponse(200, _testUser));
+
+      await expectLoggedInEvent(
+          () => authClient.verifyConflictLinkingToken('conflict-token'));
+
+      final captured = verify(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/link-verify'),
+            headers: any(named: 'headers'),
+            body: captureAny(named: 'body'),
+          )).captured;
+      final body = jsonDecode(captured.first as String) as Map<String, dynamic>;
+      expect(body['token'], equals('conflict-token'));
+      expect(body['loginAfterLinking'], isTrue);
+    });
   });
 }
