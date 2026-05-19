@@ -670,6 +670,7 @@ The following endpoints always receive the raw response — they are never retri
 | `forgot-password` | Unauthenticated flow |
 | `reset-password` | Token-based, not session-based |
 | `verify-email` | Token-based |
+| `confirm` | One-time confirmation token flow |
 | `2fa/verify` | Uses a temp token, not a session token |
 
 ### Web vs native refresh

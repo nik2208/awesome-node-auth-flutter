@@ -193,6 +193,12 @@ void main() {
           body: {'tempToken': 't', 'totpCode': '123456'});
       expect(refreshCallCount, equals(0));
     });
+
+    test('401 on /change-email/confirm does NOT trigger refresh', () async {
+      mockEndpoint('/change-email/confirm', 401);
+      await authHttp.apiPost('/change-email/confirm', body: {'token': 'tok'});
+      expect(refreshCallCount, equals(0));
+    });
   });
 
   group('/me endpoint retry', () {

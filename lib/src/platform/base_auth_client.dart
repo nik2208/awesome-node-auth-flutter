@@ -129,6 +129,13 @@ abstract class BaseAuthClient implements AuthClient {
     return null;
   }
 
+  Future<void> _emitLoggedInEvent() async {
+    final user = await checkSession();
+    if (user != null) {
+      _eventsController.add(AuthEvent(type: AuthEventType.loggedIn, user: user));
+    }
+  }
+
   @override
   Future<List<SessionInfo>> getActiveSessions() async {
     final response = await httpClient.apiGet('/sessions');
@@ -305,7 +312,7 @@ abstract class BaseAuthClient implements AuthClient {
     final response =
         await httpClient.apiPost('/magic-link/verify', body: {'token': token});
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      await checkSession();
+      await _emitLoggedInEvent();
       return AuthResult.success();
     }
     return AuthResult.failure(_errorMessage(response));
@@ -340,7 +347,7 @@ abstract class BaseAuthClient implements AuthClient {
     final response = await httpClient.apiPost('/sms/verify',
         body: {'userId': userId, 'code': code, 'mode': 'login'});
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      await checkSession();
+      await _emitLoggedInEvent();
       return AuthResult.success();
     }
     return AuthResult.failure(_errorMessage(response));
@@ -361,7 +368,7 @@ abstract class BaseAuthClient implements AuthClient {
     final response = await httpClient.apiPost('/sms/verify',
         body: {'tempToken': tempToken, 'code': code, 'mode': '2fa'});
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      await checkSession();
+      await _emitLoggedInEvent();
       return AuthResult.success();
     }
     return AuthResult.failure(_errorMessage(response));
@@ -413,7 +420,7 @@ abstract class BaseAuthClient implements AuthClient {
       body: {'tempToken': tempToken, 'totpCode': totpCode},
     );
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      await checkSession();
+      await _emitLoggedInEvent();
       return AuthResult.success();
     }
     return AuthResult.failure(_errorMessage(response));
@@ -471,6 +478,7 @@ abstract class BaseAuthClient implements AuthClient {
         .apiPost('/change-email/confirm', body: {'token': token});
     if (response.statusCode >= 200 && response.statusCode < 300) {
       await checkSession();
+      _eventsController.add(const AuthEvent(type: AuthEventType.emailChanged));
       return AuthResult.success();
     }
     return AuthResult.failure(_errorMessage(response));

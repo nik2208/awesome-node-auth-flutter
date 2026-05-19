@@ -16,6 +16,9 @@ enum AuthEventType {
 
   /// The auth client has completed its initial session check.
   initialized,
+
+  /// The user successfully confirmed an email change.
+  emailChanged,
 }
 
 /// An event emitted by [AuthClient.events] to describe authentication lifecycle changes.
