@@ -15,6 +15,7 @@ const _kNoRetryEndpoints = {
   'forgot-password',
   'reset-password',
   'verify-email',
+  'confirm',
 };
 
 /// Two-segment endpoint that must be excluded separately.

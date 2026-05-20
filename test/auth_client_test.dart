@@ -6,6 +6,7 @@ import 'package:mocktail/mocktail.dart';
 
 import 'package:awesome_node_auth_flutter/src/http/auth_http_client.dart';
 import 'package:awesome_node_auth_flutter/src/http/token_storage.dart';
+import 'package:awesome_node_auth_flutter/src/auth_events.dart';
 import 'package:awesome_node_auth_flutter/src/auth_options.dart';
 import 'package:awesome_node_auth_flutter/src/auth_user.dart';
 import 'package:awesome_node_auth_flutter/src/platform/native_auth_client.dart';
@@ -325,6 +326,133 @@ void main() {
 
       expect(received, isNotEmpty);
       expect(received.first, isA<AuthUser>());
+    });
+  });
+
+  group('AuthClient — auth events', () {
+    Future<void> expectLoggedInEvent(
+      Future<dynamic> Function() action,
+    ) async {
+      final eventFuture = expectLater(
+        authClient.events,
+        emits(predicate<AuthEvent>((event) {
+          return event.type == AuthEventType.loggedIn &&
+              event.user?.email == _testUser['email'];
+        })),
+      );
+
+      await action();
+      await eventFuture;
+      expect(authClient.state.currentUser?.email, equals(_testUser['email']));
+    }
+
+    test('verifyMagicLink emits loggedIn event', () async {
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/magic-link/verify'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async => jsonResponse(200));
+      when(() => mockClient.get(
+            Uri.parse('https://api.example.com/auth/me'),
+            headers: any(named: 'headers'),
+          )).thenAnswer((_) async => jsonResponse(200, _testUser));
+
+      await expectLoggedInEvent(() => authClient.verifyMagicLink('magic-token'));
+    });
+
+    test('verifySmsLogin emits loggedIn event', () async {
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/sms/verify'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async => jsonResponse(200));
+      when(() => mockClient.get(
+            Uri.parse('https://api.example.com/auth/me'),
+            headers: any(named: 'headers'),
+          )).thenAnswer((_) async => jsonResponse(200, _testUser));
+
+      await expectLoggedInEvent(
+          () => authClient.verifySmsLogin('user-123', '123456'));
+    });
+
+    test('validateSms emits loggedIn event', () async {
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/sms/verify'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async => jsonResponse(200));
+      when(() => mockClient.get(
+            Uri.parse('https://api.example.com/auth/me'),
+            headers: any(named: 'headers'),
+          )).thenAnswer((_) async => jsonResponse(200, _testUser));
+
+      await expectLoggedInEvent(
+          () => authClient.validateSms('temp-token', '123456'));
+    });
+
+    test('validate2fa emits loggedIn event', () async {
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/2fa/verify'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async => jsonResponse(200));
+      when(() => mockClient.get(
+            Uri.parse('https://api.example.com/auth/me'),
+            headers: any(named: 'headers'),
+          )).thenAnswer((_) async => jsonResponse(200, _testUser));
+
+      await expectLoggedInEvent(
+          () => authClient.validate2fa('temp-token', '123456'));
+    });
+
+    test('confirmEmailChange refreshes session and emits emailChanged', () async {
+      final updatedUser = {..._testUser, 'email': 'updated@example.com'};
+      final eventFuture = expectLater(
+        authClient.events,
+        emits(predicate<AuthEvent>((event) {
+          return event.type == AuthEventType.emailChanged && event.user == null;
+        })),
+      );
+
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/change-email/confirm'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async => jsonResponse(200));
+      when(() => mockClient.get(
+            Uri.parse('https://api.example.com/auth/me'),
+            headers: any(named: 'headers'),
+          )).thenAnswer((_) async => jsonResponse(200, updatedUser));
+
+      final result = await authClient.confirmEmailChange('confirm-token');
+
+      expect(result.success, isTrue);
+      await eventFuture;
+      expect(authClient.state.currentUser?.email, equals('updated@example.com'));
+    });
+
+    test('verifyConflictLinkingToken emits loggedIn event', () async {
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/link-verify'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async => jsonResponse(200));
+      when(() => mockClient.get(
+            Uri.parse('https://api.example.com/auth/me'),
+            headers: any(named: 'headers'),
+          )).thenAnswer((_) async => jsonResponse(200, _testUser));
+
+      await expectLoggedInEvent(
+          () => authClient.verifyConflictLinkingToken('conflict-token'));
+
+      final captured = verify(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/link-verify'),
+            headers: any(named: 'headers'),
+            body: captureAny(named: 'body'),
+          )).captured;
+      final body = jsonDecode(captured.first as String) as Map<String, dynamic>;
+      expect(body['token'], equals('conflict-token'));
+      expect(body['loginAfterLinking'], isTrue);
     });
   });
 }
