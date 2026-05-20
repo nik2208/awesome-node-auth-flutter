@@ -455,4 +455,79 @@ void main() {
       expect(body['loginAfterLinking'], isTrue);
     });
   });
+
+  group('AuthClient — sessions cleanup', () {
+    test('cleanupSessions succeeds on 200', () async {
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/sessions/cleanup'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async => jsonResponse(200));
+
+      final result = await authClient.cleanupSessions();
+      expect(result.success, isTrue);
+    });
+
+    test('cleanupSessions returns failure on 500', () async {
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/sessions/cleanup'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer(
+              (_) async => jsonResponse(500, {'message': 'Server error'}));
+
+      final result = await authClient.cleanupSessions();
+      expect(result.success, isFalse);
+      expect(result.error, contains('Server error'));
+    });
+  });
+
+  group('AuthClient — OAuth helpers', () {
+    test('getOAuthUrl returns correct URL for a provider', () {
+      final url = authClient.getOAuthUrl('github');
+      expect(url, equals('https://api.example.com/auth/oauth/github'));
+    });
+
+    test('getOAuthUrl returns correct URL for google provider', () {
+      final url = authClient.getOAuthUrl('google');
+      expect(url, equals('https://api.example.com/auth/oauth/google'));
+    });
+
+    test('handleOAuthCallback returns user and emits loggedIn on success',
+        () async {
+      when(() => mockClient.get(
+            Uri.parse('https://api.example.com/auth/me'),
+            headers: any(named: 'headers'),
+          )).thenAnswer((_) async => jsonResponse(200, _testUser));
+
+      final eventFuture = expectLater(
+        authClient.events,
+        emits(predicate<AuthEvent>((event) =>
+            event.type == AuthEventType.loggedIn &&
+            event.user?.email == _testUser['email'])),
+      );
+
+      final user = await authClient.handleOAuthCallback();
+
+      expect(user, isNotNull);
+      expect(user?.email, equals('test@example.com'));
+      await eventFuture;
+    });
+
+    test('handleOAuthCallback returns null when session check fails', () async {
+      when(() => mockClient.get(
+            Uri.parse('https://api.example.com/auth/me'),
+            headers: any(named: 'headers'),
+          )).thenAnswer((_) async => jsonResponse(401));
+
+      when(() => mockClient.post(
+            Uri.parse('https://api.example.com/auth/refresh'),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          )).thenAnswer((_) async => jsonResponse(401));
+
+      final user = await authClient.handleOAuthCallback();
+      expect(user, isNull);
+    });
+  });
 }

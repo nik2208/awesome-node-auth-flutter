@@ -58,6 +58,12 @@ abstract class AuthClient {
   /// Revokes the session identified by [sessionHandle].
   Future<AuthResult<void>> revokeSession(String sessionHandle);
 
+  /// Removes all expired and invalid sessions from the server store.
+  ///
+  /// Calls `POST $apiPrefix/sessions/cleanup`. Useful to call periodically
+  /// or from a session-management UI to prune stale entries.
+  Future<AuthResult<void>> cleanupSessions();
+
   // ---------------------------------------------------------------------------
   // Auth
   // ---------------------------------------------------------------------------
@@ -176,6 +182,34 @@ abstract class AuthClient {
   /// final response = await auth.httpClient.get(Uri.parse('$api/todos'));
   /// ```
   http.Client get httpClient;
+
+  // ---------------------------------------------------------------------------
+  // OAuth (redirect-based)
+  // ---------------------------------------------------------------------------
+
+  /// Returns the OAuth redirect URL for the given [provider].
+  ///
+  /// Redirect the user (or open a webview/system browser on native) to this URL
+  /// to initiate the OAuth login flow. After the callback, call
+  /// [handleOAuthCallback] to pick up the new session.
+  ///
+  /// Example:
+  /// ```dart
+  /// final url = auth.getOAuthUrl('github');
+  /// // Web: redirect the browser
+  /// // Native: open url in a webview or system browser
+  /// ```
+  String getOAuthUrl(String provider);
+
+  /// Picks up the authenticated session after a successful OAuth callback.
+  ///
+  /// Call this once the OAuth provider has redirected back to your app (e.g.
+  /// in the deep-link or post-redirect handler). Internally calls
+  /// [checkSession] and, on success, emits a [AuthEventType.loggedIn] event.
+  ///
+  /// Returns the authenticated [AuthUser], or `null` when the session could
+  /// not be established.
+  Future<AuthUser?> handleOAuthCallback();
 
   // ---------------------------------------------------------------------------
   // Streaming & UI config
