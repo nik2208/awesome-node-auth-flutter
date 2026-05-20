@@ -161,6 +161,15 @@ abstract class BaseAuthClient implements AuthClient {
     return AuthResult.failure(_errorMessage(response));
   }
 
+  @override
+  Future<AuthResult<void>> cleanupSessions() async {
+    final response = await httpClient.apiPost('/sessions/cleanup');
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return AuthResult.success();
+    }
+    return AuthResult.failure(_errorMessage(response));
+  }
+
   // -------------------------------------------------------------------------
   // Auth
   // -------------------------------------------------------------------------
@@ -593,6 +602,22 @@ abstract class BaseAuthClient implements AuthClient {
       }
     } catch (_) {}
     return null;
+  }
+
+  // -------------------------------------------------------------------------
+  // OAuth (redirect-based)
+  // -------------------------------------------------------------------------
+
+  @override
+  String getOAuthUrl(String provider) => '${options.apiPrefix}/oauth/$provider';
+
+  @override
+  Future<AuthUser?> handleOAuthCallback() async {
+    final user = await checkSession();
+    if (user != null) {
+      _eventsController.add(AuthEvent(type: AuthEventType.loggedIn, user: user));
+    }
+    return user;
   }
 
   // -------------------------------------------------------------------------

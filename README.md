@@ -25,17 +25,18 @@ Supports **web** (including WASM) via HttpOnly cookies + CSRF, and **native** (i
 11. [Password management](#password-management)
 12. [Email management](#email-management)
 13. [Active sessions](#active-sessions)
-14. [Account linking](#account-linking)
-15. [AuthUser model](#authuser-model)
-16. [AuthResult\<T\>](#authresultt)
-17. [Custom TokenStorage](#custom-tokenstorage)
-18. [Internal behaviour — automatic refresh](#internal-behaviour--automatic-refresh)
-19. [Headless mode](#headless-mode)
-20. [Authenticated HTTP client (interceptor)](#authenticated-http-client-interceptor)
-21. [SSE stream](#sse-stream)
-22. [UI config](#ui-config)
-23. [WASM compatibility](#wasm-compatibility)
-24. [License](#license)
+14. [OAuth (redirect-based)](#oauth-redirect-based)
+15. [Account linking](#account-linking)
+16. [AuthUser model](#authuser-model)
+17. [AuthResult\<T\>](#authresultt)
+18. [Custom TokenStorage](#custom-tokenstorage)
+19. [Internal behaviour — automatic refresh](#internal-behaviour--automatic-refresh)
+20. [Headless mode](#headless-mode)
+21. [Authenticated HTTP client (interceptor)](#authenticated-http-client-interceptor)
+22. [SSE stream](#sse-stream)
+23. [UI config](#ui-config)
+24. [WASM compatibility](#wasm-compatibility)
+25. [License](#license)
 
 ---
 
@@ -43,7 +44,7 @@ Supports **web** (including WASM) via HttpOnly cookies + CSRF, and **native** (i
 
 ```yaml
 dependencies:
-  awesome_node_auth_flutter: ^1.9.4
+  awesome_node_auth_flutter: ^1.10.0
 ```
 
 ---
@@ -227,6 +228,9 @@ auth.events.listen((event) {
     case AuthEventType.sessionRevoked:
       // Backend returned SESSION_REVOKED — forced logout
       print('Session was revoked server-side');
+    case AuthEventType.emailChanged:
+      // User confirmed an email address change
+      print('Email changed — new address: ${auth.state.currentUser?.email}');
   }
 });
 ```
@@ -234,10 +238,11 @@ auth.events.listen((event) {
 | Event type | Trigger |
 |---|---|
 | `initialized` | First `checkSession()` completed (regardless of outcome) |
-| `loggedIn` | Successful login or magic-link / SMS verification |
+| `loggedIn` | Successful login, magic-link / SMS / TOTP verification, OAuth callback, or conflict-linking resolution |
 | `loggedOut` | Explicit `logout()` or failed token refresh |
 | `sessionExpired` | Token refresh call returned a non-2xx response |
 | `sessionRevoked` | Backend returned `{ "code": "SESSION_REVOKED" }` |
+| `emailChanged` | User successfully confirmed an email address change via `confirmEmailChange()` |
 
 > **Note:** The `initialized` event is emitted whether `checkSession()` succeeds **or** fails
 > (e.g. network error, 401 on startup). It only signals that the first session check has
@@ -455,6 +460,12 @@ final result = await auth.revokeSession(session.handle);
 if (result.success) {
   print('Session revoked');
 }
+
+// Remove expired / invalid sessions from the server store
+final cleanup = await auth.cleanupSessions();
+if (cleanup.success) {
+  print('Session store cleaned up');
+}
 ```
 
 `SessionInfo` fields:
@@ -467,6 +478,81 @@ if (result.success) {
 | `createdAt` | `DateTime?` | When the session was created |
 | `lastActiveAt` | `DateTime?` | Timestamp of the last activity |
 | `isCurrent` | `bool` | `true` for the session that belongs to the current request |
+
+---
+
+## OAuth (redirect-based)
+
+The library provides helpers to initiate OAuth provider flows. The actual redirect
+is always browser-driven (web) or opened in a webview / system browser (native);
+the library does not embed a browser itself.
+
+```dart
+// 1. Get the redirect URL for the chosen provider
+final url = auth.getOAuthUrl('github');
+// → 'https://api.example.com/auth/oauth/github'
+
+// ── Web ───────────────────────────────────────────────────────────────────────
+// Redirect the browser — the callback is handled server-side and the session
+// cookie is set automatically.
+// (In headless / SPA mode you may use window.location.href or your router)
+
+// ── Native (iOS / Android / Desktop) ─────────────────────────────────────────
+// Open the URL in a webview or system browser, e.g. with url_launcher:
+//   await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+//
+// Configure your deep-link scheme in Android's AndroidManifest.xml (intent-filter)
+// and iOS's Info.plist (CFBundleURLTypes) so the OAuth callback redirects back
+// to your app.
+
+// 2. After the callback, pick up the session
+final user = await auth.handleOAuthCallback();
+if (user != null) {
+  print('OAuth login successful: ${user.email}');
+  // AuthEventType.loggedIn is emitted automatically
+}
+```
+
+### Background token refresh on app resume
+
+The client does not hook into the Flutter app lifecycle automatically. Add a
+`checkSession()` call in your `AppLifecycleListener.onResume` (Flutter ≥ 3.13)
+or `WidgetsBindingObserver.didChangeAppLifecycleState` handler to restore the
+session after the app returns to the foreground:
+
+```dart
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      auth.checkSession(); // silently restores or expires the session
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+}
+```
+
+### Deep-link handling for email flows (native)
+
+Wire your platform deep-link handler to call the appropriate client method:
+
+| Deep-link token type | Client method |
+|---|---|
+| Email verification | `auth.verifyEmail(token)` |
+| Password reset | `auth.resetPassword(newPassword, token)` |
+| Magic link | `auth.verifyMagicLink(token)` |
+| OAuth callback | `auth.handleOAuthCallback()` |
 
 ---
 
